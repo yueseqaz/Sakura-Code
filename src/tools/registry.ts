@@ -12,6 +12,10 @@ import { projectIndexTool, semanticSearchTool } from "./index.js";
 import { webSearchTool, fetchUrlTool } from "./web.js";
 // Phase 5 — TODOs
 import { todoWriteTool, todoReadTool } from "./todo.js";
+// Phase 6 — Docker
+import { dockerPsTool, dockerImagesTool, dockerLogsTool, dockerExecTool, dockerComposeTool } from "./docker.js";
+// Phase 7 — Database
+import { sqliteQueryTool, sqliteTablesTool, sqliteSchemaTool, mysqlQueryTool, postgresQueryTool } from "./database.js";
 
 // ─── All built-in tools ───────────────────────────────────────────────────────
 const BUILTIN_TOOLS: ToolHandler[] = [
@@ -35,6 +39,18 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   // Phase 5
   todoWriteTool,
   todoReadTool,
+  // Phase 6 — Docker
+  dockerPsTool,
+  dockerImagesTool,
+  dockerLogsTool,
+  dockerExecTool,
+  dockerComposeTool,
+  // Phase 7 — Database
+  sqliteQueryTool,
+  sqliteTablesTool,
+  sqliteSchemaTool,
+  mysqlQueryTool,
+  postgresQueryTool,
 ];
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
