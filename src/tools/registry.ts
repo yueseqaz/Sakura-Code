@@ -16,6 +16,8 @@ import { todoWriteTool, todoReadTool } from "./todo.js";
 import { dockerPsTool, dockerImagesTool, dockerLogsTool, dockerExecTool, dockerComposeTool } from "./docker.js";
 // Phase 7 — Database
 import { sqliteQueryTool, sqliteTablesTool, sqliteSchemaTool, mysqlQueryTool, postgresQueryTool } from "./database.js";
+// Phase 8 — Memory
+import { memorySaveTool, memoryRecallTool, memoryListTool, memoryDeleteTool } from "./memory.js";
 
 // ─── All built-in tools ───────────────────────────────────────────────────────
 const BUILTIN_TOOLS: ToolHandler[] = [
@@ -51,6 +53,11 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   sqliteSchemaTool,
   mysqlQueryTool,
   postgresQueryTool,
+  // Phase 8 — Memory
+  memorySaveTool,
+  memoryRecallTool,
+  memoryListTool,
+  memoryDeleteTool,
 ];
 
 // ─── Registry ─────────────────────────────────────────────────────────────────

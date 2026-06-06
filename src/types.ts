@@ -136,3 +136,11 @@ export interface TodoItem {
   priority?: "high" | "medium" | "low";
   created_at: string;
 }
+
+export interface MemoryEntry {
+  id: string;
+  category: "preference" | "project" | "personal" | "workflow" | "other";
+  content: string;
+  importance: "low" | "medium" | "high";
+  created_at: string;
+}
