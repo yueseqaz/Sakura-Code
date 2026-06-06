@@ -11,9 +11,11 @@ User → LLM → Tool Dispatch → Parallel Execution → Streaming Results → 
 ## ✨ Features
 
 - **Streaming Output** — Real-time token-by-token display, like typing!
-- **Modular Tool System** — Filesystem, Git, Web, Code Intelligence, Task Management
+- **Modular Tool System** — Filesystem, Git, Web, Code Intelligence, Task Management, Docker, Database, Memory
+- **Provider System** — Configure multiple API providers (DeepSeek, OpenAI, Ollama, etc.)
 - **MCP Extension** — Connect external tool servers
 - **Session Persistence** — Continue conversations across sessions
+- **Long-term Memory** — Remember user preferences across sessions
 - **Security First** — Path guards, command blocklist, file size limits
 
 ## 🚀 Quick Start
@@ -94,6 +96,35 @@ sakura-code
 | `todo_write` | Create/replace the TODO list |
 | `todo_read` | Read TODOs, filterable by status |
 
+### Phase 6 — Docker
+
+| Tool | Description |
+|------|-------------|
+| `docker_ps` | List Docker containers |
+| `docker_images` | List Docker images |
+| `docker_logs` | Get container logs |
+| `docker_exec` | Execute command in container |
+| `docker_compose` | Run docker compose commands |
+
+### Phase 7 — Database
+
+| Tool | Description |
+|------|-------------|
+| `sqlite_query` | Execute SQLite query |
+| `sqlite_tables` | List SQLite tables |
+| `sqlite_schema` | Get table schema |
+| `mysql_query` | Execute MySQL query |
+| `postgres_query` | Execute PostgreSQL query |
+
+### Phase 8 — Memory
+
+| Tool | Description |
+|------|-------------|
+| `memory_save` | Save user information to memory |
+| `memory_recall` | Search through memories |
+| `memory_list` | List all memories |
+| `memory_delete` | Delete a memory |
+
 ## 📁 Project Structure
 
 ```
@@ -101,6 +132,7 @@ Sakura-Code/
 ├── src/
 │   ├── index.ts              # CLI entry point (Commander)
 │   ├── types.ts              # All TypeScript interfaces & types
+│   ├── config.ts             # Configuration management
 │   │
 │   ├── agent/
 │   │   ├── agent.ts          # Core agent loop (LLM ↔ tool dispatch, streaming)
@@ -114,10 +146,13 @@ Sakura-Code/
 │   │   ├── git.ts            # git_status, git_diff, git_commit
 │   │   ├── index.ts          # project_index, semantic_search
 │   │   ├── web.ts            # web_search, fetch_url
-│   │   └── todo.ts           # todo_write, todo_read
+│   │   ├── todo.ts           # todo_write, todo_read
+│   │   ├── docker.ts         # Docker management tools
+│   │   ├── database.ts       # SQLite, MySQL, PostgreSQL queries
+│   │   └── memory.ts         # Long-term memory system
 │   │
 │   ├── utils/
-│   │   ├── logger.ts         # Colored terminal output
+│   │   ├── logger.ts         # Colored terminal output with loading animations
 │   │   └── security.ts       # Path guards, command blocklist, truncation
 │   │
 │   └── mcp/
@@ -130,20 +165,67 @@ Sakura-Code/
 
 ## ⚙️ Configuration
 
-Create a `.env` file:
+Sakura Code supports multiple configuration methods (in priority order):
+
+### 1️⃣ Config Commands (Recommended)
 
 ```bash
-# Required
+# View current config
+sakura-code config show
+
+# Set API key for a provider
+sakura-code config set-key deepseek sk-your-key
+
+# Set default provider
+sakura-code config set-provider deepseek
+
+# Set default model
+sakura-code config set-model deepseek-chat
+
+# Add a custom provider
+sakura-code config add-provider my-api --base-url https://api.example.com/v1
+
+# Remove a provider
+sakura-code config remove-provider my-api
+```
+
+### 2️⃣ Config File
+
+Config is stored in `~/.sakura-code/config.json` (global) or `.sakura-code.json` (project):
+
+```json
+{
+  "providers": {
+    "deepseek": {
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKey": "sk-...",
+      "models": ["deepseek-chat", "deepseek-coder"]
+    },
+    "openai": {
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "sk-..."
+    }
+  },
+  "defaultProvider": "deepseek",
+  "defaultModel": "deepseek-chat"
+}
+```
+
+### 3️⃣ Environment Variables
+
+```bash
+export OPENAI_API_KEY=sk-...
+export OPENAI_BASE_URL=https://api.deepseek.com/v1
+export OPENAI_MODEL=deepseek-chat
+```
+
+### 4️⃣ .env File
+
+Create a `.env` file in your project directory:
+
+```bash
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o
-
-# Optional: use a different base URL (e.g. DeepSeek, Anthropic, Ollama)
-# OPENAI_BASE_URL=https://api.deepseek.com/v1
-# OPENAI_BASE_URL=https://api.anthropic.com/v1
-# OPENAI_BASE_URL=http://localhost:11434/v1
-
-# Optional: disable color output
-# NO_COLOR=1
+OPENAI_MODEL=deepseek-chat
 ```
 
 ## 🔒 Security
@@ -185,6 +267,11 @@ MCP servers must expose:
 ## 🗺️ Roadmap
 
 - [x] Streaming output (SSE)
+- [x] Provider configuration system
+- [x] Docker tools
+- [x] Database tools (SQLite, MySQL, PostgreSQL)
+- [x] Long-term memory system
+- [x] Cute loading animations
 - [ ] True semantic search with embeddings (OpenAI embeddings API)
 - [ ] MCP server discovery & hot reload
 - [ ] Multi-agent orchestration (subagents)

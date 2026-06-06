@@ -20,19 +20,19 @@ function colorize(text: string, ...codes: string[]): string {
 
 // Yandere thinking messages ✨
 const THINKING_MESSAGES = [
-  "正在为你思考中~ ♡",
-  "让我想想怎么做最好...",
-  "樱花飘落中... 思考中 ✨",
-  "为了你，我会好好想的~",
-  "请稍等一下嘛~ ♡",
-  "正在努力为你工作~",
+  "Thinking for you~ ♡",
+  "Let me think about the best approach...",
+  "Cherry blossoms falling... thinking ✨",
+  "I'll do my best for you~",
+  "Just a moment~ ♡",
+  "Working hard for you~",
 ];
 
 const WORKING_MESSAGES = [
-  "正在努力工作中... ♡",
-  "马上就好~ 稍等一下",
-  "为了你，我会全力以赴！",
-  "正在处理中... 请等等我~",
+  "Working hard... ♡",
+  "Almost there~ wait a moment",
+  "I'll do anything for you!",
+  "Processing... please wait for me~",
 ];
 
 let loadingInterval: NodeJS.Timeout | null = null;
@@ -89,21 +89,23 @@ export const logger = {
   },
   
   working() {
-    this.cancelLoading();
+    // Stop any existing animation first
+    this.stopLoading();
     
-    loadingDelayTimer = setTimeout(() => {
-      isLoading = true;
-      const msg = getRandomMessage(WORKING_MESSAGES);
-      const dots = ["", ".", "..", "..."];
-      loadingIndex = 0;
-      
-      process.stdout.write("\n");
-      loadingInterval = setInterval(() => {
-        const dot = dots[loadingIndex % dots.length];
-        process.stdout.write(`\r${colorize("⚙", c.magenta)} ${colorize(msg + dot, c.dim)}`);
-        loadingIndex++;
-      }, 400);
-    }, LOADING_DELAY);
+    // Working shows immediately (no delay) - user already knows tools are being called
+    isLoading = true;
+    const msg = getRandomMessage(WORKING_MESSAGES);
+    const dots = ["", ".", "..", "..."];
+    loadingIndex = 0;
+    
+    // Add newline to ensure we're on a fresh line
+    process.stdout.write("\n");
+    
+    loadingInterval = setInterval(() => {
+      const dot = dots[loadingIndex % dots.length];
+      process.stdout.write(`\r${colorize("⚙", c.magenta)} ${colorize(msg + dot, c.dim)}`);
+      loadingIndex++;
+    }, 400);
   },
   
   stopLoading() {

@@ -63,13 +63,11 @@ export class Agent {
         stream: true,
       });
 
-      // ── Stop loading when stream starts ──────────────────────────────────
-      logger.stopLoading();
-
       // Accumulate streaming response
       let content = "";
       const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
       let hasContent = false;
+      let thinkingStopped = false;
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
@@ -77,6 +75,12 @@ export class Agent {
 
         // Handle text content (stream to terminal)
         if (delta.content) {
+          // Stop thinking animation when first content arrives
+          if (!thinkingStopped) {
+            thinkingStopped = true;
+            logger.stopLoading();
+          }
+          
           if (!hasContent) {
             hasContent = true;
             process.stdout.write("\n");
@@ -98,6 +102,12 @@ export class Agent {
             if (tc.function?.arguments) existing.arguments += tc.function.arguments;
           }
         }
+      }
+
+      // Ensure thinking is stopped
+      if (!thinkingStopped) {
+        thinkingStopped = true;
+        logger.stopLoading();
       }
 
       if (hasContent) {
@@ -124,7 +134,7 @@ export class Agent {
       // ── No tool calls → done ──────────────────────────────────────────────
       if (toolCalls.size === 0) break;
 
-      // ── Show working status ─────────────────────────────────────────────
+      // ── Show working status immediately ──────────────────────────────────
       logger.working();
 
       // ── Execute tools (in parallel) ───────────────────────────────────────
