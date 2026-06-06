@@ -1,25 +1,10 @@
 #!/usr/bin/env node
-import { config } from "dotenv";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
 import { Command } from "commander";
 import { ConfigManager } from "./config.js";
 import { firstTimeSetup, interactiveConfig } from "./interactive-config.js";
 import { Agent } from "./agent/agent.js";
 import { Context } from "./agent/context.js";
 import { createInterface } from "node:readline";
-
-// Load .env for fallback
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const packageEnv = resolve(__dirname, "../.env");
-const cwdEnv = resolve(process.cwd(), ".env");
-
-if (existsSync(cwdEnv)) {
-  config({ path: cwdEnv });
-} else if (existsSync(packageEnv)) {
-  config({ path: packageEnv });
-}
 
 // Initialize config
 const configManager = new ConfigManager();

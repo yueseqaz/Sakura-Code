@@ -40,9 +40,8 @@ const DEFAULT_CONFIG: Config = {
 };
 
 // ─── Config Paths ────────────────────────────────────────────────────────────
-const GLOBAL_CONFIG_DIR = join(homedir(), ".sakura-code");
-const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, "config.json");
-const LOCAL_CONFIG_FILE = ".sakura-code.json";
+const CONFIG_DIR = join(homedir(), ".sakura-code");
+const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 // ─── Config Manager ──────────────────────────────────────────────────────────
 export class ConfigManager {
@@ -50,30 +49,13 @@ export class ConfigManager {
   private configPath: string;
 
   constructor() {
-    this.configPath = this.resolveConfigPath();
+    this.configPath = CONFIG_FILE;
     this.config = this.load();
   }
 
-  private resolveConfigPath(): string {
-    // 1. Check local config first
-    const localPath = resolve(process.cwd(), LOCAL_CONFIG_FILE);
-    if (existsSync(localPath)) {
-      return localPath;
-    }
-
-    // 2. Check global config
-    if (existsSync(GLOBAL_CONFIG_FILE)) {
-      return GLOBAL_CONFIG_FILE;
-    }
-
-    // 3. Create global config if none exists
-    this.ensureGlobalConfigDir();
-    return GLOBAL_CONFIG_FILE;
-  }
-
-  private ensureGlobalConfigDir() {
-    if (!existsSync(GLOBAL_CONFIG_DIR)) {
-      mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
+  private ensureConfigDir() {
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
     }
   }
 
@@ -101,7 +83,7 @@ export class ConfigManager {
   }
 
   save() {
-    this.ensureGlobalConfigDir();
+    this.ensureConfigDir();
     writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
   }
 
@@ -165,32 +147,18 @@ export class ConfigManager {
 
   // ─── Resolve for Agent ───────────────────────────────────────────────────
   resolveForAgent(): { apiKey: string; baseURL: string; model: string } {
-    // Check environment variables first (highest priority)
-    const envApiKey = process.env.OPENAI_API_KEY;
-    const envBaseURL = process.env.OPENAI_BASE_URL;
-    const envModel = process.env.OPENAI_MODEL;
-
-    if (envApiKey) {
-      return {
-        apiKey: envApiKey,
-        baseURL: envBaseURL ?? this.getProvider()?.baseURL ?? "",
-        model: envModel ?? this.config.defaultModel,
-      };
-    }
-
-    // Use config
     const provider = this.getProvider();
     if (!provider?.apiKey) {
       throw new Error(
         `No API key configured for '${this.config.defaultProvider}'.\n` +
-        `Run: sakura-code config set-key ${this.config.defaultProvider} <your-api-key>`
+        `Run: sakura-code config` + ` to set up your API key.`
       );
     }
 
     return {
       apiKey: provider.apiKey,
       baseURL: provider.baseURL,
-      model: envModel ?? this.config.defaultModel,
+      model: this.config.defaultModel,
     };
   }
 
