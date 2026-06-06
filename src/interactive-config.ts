@@ -20,7 +20,6 @@ async function fetchModels(baseURL: string, apiKey: string): Promise<string[]> {
     });
 
     if (!response.ok) {
-      console.log(`\n⚠️ Failed to fetch models (HTTP ${response.status})`);
       return [];
     }
 
@@ -30,13 +29,11 @@ async function fetchModels(baseURL: string, apiKey: string): Promise<string[]> {
       return [];
     }
 
-    // Extract model IDs and sort
     return data.data
       .map(m => m.id)
       .filter(id => id && typeof id === "string")
       .sort();
-  } catch (err) {
-    console.log(`\n⚠️ Failed to fetch models: ${(err as Error).message}`);
+  } catch {
     return [];
   }
 }
@@ -89,7 +86,6 @@ export async function firstTimeSetup(configManager: ConfigManager): Promise<void
     baseURL = custom.baseURL;
     apiKey = custom.apiKey;
 
-    // Fetch models from custom provider
     console.log("\nFetching available models...");
     models = await fetchModels(baseURL, apiKey);
 
@@ -113,12 +109,9 @@ export async function firstTimeSetup(configManager: ConfigManager): Promise<void
     }
   } else {
     providerName = provider;
-
-    // Get provider-specific base URL
     const providerConfig = getProviderConfig(provider);
     baseURL = providerConfig.baseURL;
 
-    // Get API key
     if (provider === "ollama") {
       apiKey = "ollama";
       console.log("\n💡 Ollama is a local model, no API key needed~");
@@ -133,7 +126,6 @@ export async function firstTimeSetup(configManager: ConfigManager): Promise<void
       apiKey = key;
     }
 
-    // Fetch models from provider
     console.log("\nFetching available models...");
     models = await fetchModels(baseURL, apiKey);
 
@@ -146,7 +138,6 @@ export async function firstTimeSetup(configManager: ConfigManager): Promise<void
       });
       defaultModel = model;
     } else {
-      // Fallback to manual input
       console.log("\nCould not fetch models. Please enter manually.");
       const { model } = await prompts({
         type: "text",
@@ -159,7 +150,6 @@ export async function firstTimeSetup(configManager: ConfigManager): Promise<void
     }
   }
 
-  // Save config
   configManager.addProvider(providerName, {
     baseURL,
     apiKey,
@@ -189,7 +179,7 @@ export async function interactiveConfig(configManager: ConfigManager): Promise<v
         { title: "🔄 Refresh models from API", value: "refresh" },
         { title: "➕ Add new provider", value: "add" },
         { title: "❌ Remove provider", value: "remove" },
-        { title: "🚪 Back", value: "exit" },
+        { title: "🚪 Exit", value: "exit" },
       ],
     });
 
@@ -200,34 +190,49 @@ export async function interactiveConfig(configManager: ConfigManager): Promise<v
 
     switch (action) {
       case "show":
-        console.log("\n" + configManager.display() + "\n");
+        await showConfigSubMenu(configManager);
         break;
-
       case "switch":
         await switchProvider(configManager);
         break;
-
       case "key":
         await updateApiKey(configManager);
         break;
-
       case "model":
         await updateModel(configManager);
         break;
-
       case "refresh":
         await refreshModels(configManager);
         break;
-
       case "add":
         await addProvider(configManager);
         break;
-
       case "remove":
         await removeProvider(configManager);
         break;
     }
   }
+}
+
+// ─── Show Config Sub Menu ────────────────────────────────────────────────────
+async function showConfigSubMenu(configManager: ConfigManager): Promise<void> {
+  const config = configManager.get();
+  const provider = config.providers[config.defaultProvider];
+  const keyDisplay = provider?.apiKey ? "****" + provider.apiKey.slice(-4) : "(not set)";
+
+  const message = [
+    `Provider: ${config.defaultProvider}`,
+    `Model: ${config.defaultModel}`,
+    `URL: ${provider?.baseURL ?? "N/A"}`,
+    `Key: ${keyDisplay}`,
+  ].join("\n");
+
+  await prompts({
+    type: "select",
+    name: "back",
+    message: message,
+    choices: [{ title: "← Back", value: true }],
+  });
 }
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
@@ -249,7 +254,12 @@ async function switchProvider(configManager: ConfigManager): Promise<void> {
   const providers = Object.keys(config.providers);
 
   if (providers.length === 0) {
-    console.log("\n⚠️ No providers configured yet~\n");
+    await prompts({
+      type: "select",
+      name: "back",
+      message: "No providers configured yet~",
+      choices: [{ title: "← Back", value: true }],
+    });
     return;
   }
 
@@ -257,15 +267,23 @@ async function switchProvider(configManager: ConfigManager): Promise<void> {
     type: "select",
     name: "provider",
     message: "Select provider",
-    choices: providers.map(p => ({
-      title: `${p}${p === config.defaultProvider ? " (current)" : ""}`,
-      value: p,
-    })),
+    choices: [
+      ...providers.map(p => ({
+        title: `${p}${p === config.defaultProvider ? " (current)" : ""}`,
+        value: p,
+      })),
+      { title: "← Cancel", value: "_cancel" },
+    ],
   });
 
-  if (provider) {
+  if (provider && provider !== "_cancel") {
     configManager.setDefaultProvider(provider);
-    console.log(`\n✓ Switched to ${provider}\n`);
+    await prompts({
+      type: "select",
+      name: "ok",
+      message: `Switched to ${provider}`,
+      choices: [{ title: "✓ OK", value: true }],
+    });
   }
 }
 
@@ -277,10 +295,13 @@ async function updateApiKey(configManager: ConfigManager): Promise<void> {
     type: "select",
     name: "provider",
     message: "Select provider",
-    choices: providers.map(p => ({ title: p, value: p })),
+    choices: [
+      ...providers.map(p => ({ title: p, value: p })),
+      { title: "← Cancel", value: "_cancel" },
+    ],
   });
 
-  if (provider) {
+  if (provider && provider !== "_cancel") {
     const { apiKey } = await prompts({
       type: "password",
       name: "apiKey",
@@ -289,7 +310,12 @@ async function updateApiKey(configManager: ConfigManager): Promise<void> {
 
     if (apiKey) {
       configManager.setApiKey(provider, apiKey);
-      console.log(`\n✓ ${provider} API Key updated\n`);
+      await prompts({
+        type: "select",
+        name: "ok",
+        message: `${provider} API Key updated`,
+        choices: [{ title: "✓ OK", value: true }],
+      });
     }
   }
 }
@@ -299,7 +325,12 @@ async function updateModel(configManager: ConfigManager): Promise<void> {
   const provider = config.providers[config.defaultProvider];
 
   if (!provider) {
-    console.log("\n⚠️ Please select a provider first~\n");
+    await prompts({
+      type: "select",
+      name: "back",
+      message: "Please select a provider first~",
+      choices: [{ title: "← Back", value: true }],
+    });
     return;
   }
 
@@ -307,11 +338,11 @@ async function updateModel(configManager: ConfigManager): Promise<void> {
 
   if (provider.models && provider.models.length > 0) {
     choices = provider.models.map(m => ({ title: m, value: m }));
-    choices.push({ title: "Other (enter manually)", value: "custom" });
+    choices.push({ title: "✏️ Enter manually", value: "_custom" });
   }
+  choices.push({ title: "← Cancel", value: "_cancel" });
 
-  if (choices.length === 0) {
-    // No models stored, ask for manual input
+  if (choices.length <= 1) {
     const { model } = await prompts({
       type: "text",
       name: "model",
@@ -321,7 +352,12 @@ async function updateModel(configManager: ConfigManager): Promise<void> {
 
     if (model) {
       configManager.setDefaultModel(model);
-      console.log(`\n✓ Default model set to ${model}\n`);
+      await prompts({
+        type: "select",
+        name: "ok",
+        message: `Default model set to ${model}`,
+        choices: [{ title: "✓ OK", value: true }],
+      });
     }
     return;
   }
@@ -333,8 +369,8 @@ async function updateModel(configManager: ConfigManager): Promise<void> {
     choices,
   });
 
-  if (model) {
-    if (model === "custom") {
+  if (model && model !== "_cancel") {
+    if (model === "_custom") {
       const { customModel } = await prompts({
         type: "text",
         name: "customModel",
@@ -342,11 +378,21 @@ async function updateModel(configManager: ConfigManager): Promise<void> {
       });
       if (customModel) {
         configManager.setDefaultModel(customModel);
-        console.log(`\n✓ Default model set to ${customModel}\n`);
+        await prompts({
+          type: "select",
+          name: "ok",
+          message: `Default model set to ${customModel}`,
+          choices: [{ title: "✓ OK", value: true }],
+        });
       }
     } else {
       configManager.setDefaultModel(model);
-      console.log(`\n✓ Default model set to ${model}\n`);
+      await prompts({
+        type: "select",
+        name: "ok",
+        message: `Default model set to ${model}`,
+        choices: [{ title: "✓ OK", value: true }],
+      });
     }
   }
 }
@@ -356,18 +402,32 @@ async function refreshModels(configManager: ConfigManager): Promise<void> {
   const provider = config.providers[config.defaultProvider];
 
   if (!provider) {
-    console.log("\n⚠️ Please select a provider first~\n");
+    await prompts({
+      type: "select",
+      name: "back",
+      message: "Please select a provider first~",
+      choices: [{ title: "← Back", value: true }],
+    });
     return;
   }
 
-  console.log(`\nFetching models from ${config.defaultProvider}...`);
   const models = await fetchModels(provider.baseURL, provider.apiKey);
 
   if (models.length > 0) {
     configManager.updateProvider(config.defaultProvider, { models });
-    console.log(`✓ Found ${models.length} models\n`);
+    await prompts({
+      type: "select",
+      name: "ok",
+      message: `Found ${models.length} models from ${config.defaultProvider}`,
+      choices: [{ title: "✓ OK", value: true }],
+    });
   } else {
-    console.log("⚠️ No models found or failed to fetch\n");
+    await prompts({
+      type: "select",
+      name: "ok",
+      message: "No models found or failed to fetch",
+      choices: [{ title: "← Back", value: true }],
+    });
   }
 }
 
@@ -393,10 +453,8 @@ async function addProvider(configManager: ConfigManager): Promise<void> {
   ]);
 
   if (name && baseURL) {
-    // Fetch models
     let models: string[] = [];
     if (apiKey) {
-      console.log("\nFetching models...");
       models = await fetchModels(baseURL, apiKey);
     }
 
@@ -405,7 +463,13 @@ async function addProvider(configManager: ConfigManager): Promise<void> {
       apiKey: apiKey || "",
       models,
     });
-    console.log(`\n✓ Provider ${name} added${models.length > 0 ? ` with ${models.length} models` : ""}\n`);
+
+    await prompts({
+      type: "select",
+      name: "ok",
+      message: `Provider ${name} added${models.length > 0 ? ` with ${models.length} models` : ""}`,
+      choices: [{ title: "✓ OK", value: true }],
+    });
   }
 }
 
@@ -414,7 +478,12 @@ async function removeProvider(configManager: ConfigManager): Promise<void> {
   const providers = Object.keys(config.providers).filter(p => p !== config.defaultProvider);
 
   if (providers.length === 0) {
-    console.log("\n⚠️ No providers to remove (cannot remove default provider)\n");
+    await prompts({
+      type: "select",
+      name: "back",
+      message: "No providers to remove (cannot remove default provider)",
+      choices: [{ title: "← Back", value: true }],
+    });
     return;
   }
 
@@ -422,10 +491,13 @@ async function removeProvider(configManager: ConfigManager): Promise<void> {
     type: "select",
     name: "provider",
     message: "Select provider to remove",
-    choices: providers.map(p => ({ title: p, value: p })),
+    choices: [
+      ...providers.map(p => ({ title: p, value: p })),
+      { title: "← Cancel", value: "_cancel" },
+    ],
   });
 
-  if (provider) {
+  if (provider && provider !== "_cancel") {
     const { confirm } = await prompts({
       type: "confirm",
       name: "confirm",
@@ -435,7 +507,12 @@ async function removeProvider(configManager: ConfigManager): Promise<void> {
 
     if (confirm) {
       configManager.removeProvider(provider);
-      console.log(`\n✓ ${provider} removed\n`);
+      await prompts({
+        type: "select",
+        name: "ok",
+        message: `${provider} removed`,
+        choices: [{ title: "✓ OK", value: true }],
+      });
     }
   }
 }

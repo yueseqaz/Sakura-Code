@@ -76,7 +76,13 @@ program
       }
 
       // Interactive REPL mode
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      let rl = createInterface({ input: process.stdin, output: process.stdout });
+      
+      const recreateReadline = () => {
+        rl.close();
+        rl = createInterface({ input: process.stdin, output: process.stdout });
+      };
+      
       const ask = (q: string) => new Promise<string>((r) => rl.question(q, r));
 
       console.log("🌸 Sakura Code — AI Coding Agent  (Ctrl+C or 'exit' to quit)\n");
@@ -100,12 +106,14 @@ program
           continue;
         }
         if (input.trim() === "/config") {
+          // Close readline before config
           rl.close();
           await interactiveConfig(configManager);
           // Reinitialize agent with new config
           const newConfig = configManager.resolveForAgent();
           Object.assign(agent, new Agent(newConfig));
-          rl.resume();
+          // Recreate readline
+          recreateReadline();
           continue;
         }
         if (input.trim() === "/help") {
