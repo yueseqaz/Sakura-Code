@@ -50,6 +50,9 @@ export class Agent {
     while (iterations < this.maxIterations) {
       iterations++;
 
+      // ── Show thinking status ─────────────────────────────────────────────
+      logger.thinking();
+
       // ── Call LLM with Streaming ──────────────────────────────────────────
       const stream = await this.client.chat.completions.create({
         model: this.model,
@@ -59,6 +62,9 @@ export class Agent {
         parallel_tool_calls: true,
         stream: true,
       });
+
+      // ── Stop loading when stream starts ──────────────────────────────────
+      logger.stopLoading();
 
       // Accumulate streaming response
       let content = "";
@@ -118,6 +124,9 @@ export class Agent {
       // ── No tool calls → done ──────────────────────────────────────────────
       if (toolCalls.size === 0) break;
 
+      // ── Show working status ─────────────────────────────────────────────
+      logger.working();
+
       // ── Execute tools (in parallel) ───────────────────────────────────────
       const toolResults = await this.executeTools(
         Array.from(toolCalls.entries()).map(([_, tc]) => ({
@@ -128,6 +137,9 @@ export class Agent {
       );
       ctx.push(...toolResults);
     }
+
+    // ── Stop any remaining loading animation ──────────────────────────────
+    logger.stopLoading();
 
     if (iterations >= this.maxIterations) {
       logger.error(`Reached max iterations (${this.maxIterations}). Stopping.`);
