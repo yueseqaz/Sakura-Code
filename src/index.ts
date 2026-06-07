@@ -98,7 +98,8 @@ program
       
       const ask = (q: string) => new Promise<string>((r) => rl.question(q, r));
 
-      console.log("🌸 Sakura Code — AI Coding Agent  (Ctrl+C or 'exit' to quit)\n");
+      console.log("\x1b[36m🌸\x1b[0m \x1b[1mSakura Code\x1b[0m \x1b[90mv0.1.0\x1b[0m");
+      console.log("\x1b[90m   Your cute AI coding companion~ ♡\x1b[0m\n");
       console.log("   Commands: /help /context /config /save /clear\n");
 
       while (true) {

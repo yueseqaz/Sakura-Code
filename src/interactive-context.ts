@@ -9,14 +9,10 @@ export async function interactiveContext(
   let exit = false;
 
   while (!exit) {
-    const status = await contextManager.getStatus(ctx.messages);
-    const model = contextManager.getModel() || "unknown";
-    const maxTokens = contextManager.getMaxTokens();
-
     const { action } = await prompts({
       type: "select",
       name: "action",
-      message: `Context (${status.formatted})`,
+      message: "Context Settings",
       choices: [
         { title: "📊 View Usage", value: "view" },
         { title: "⚙️  Set Max Context", value: "set" },
