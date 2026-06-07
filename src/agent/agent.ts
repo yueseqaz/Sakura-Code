@@ -3,6 +3,7 @@ import type { Context } from "./context.js";
 import { Registry } from "../tools/registry.js";
 import { logger } from "../utils/logger.js";
 import { ContextManager } from "../utils/context-manager.js";
+import { SubagentManager } from "./subagent-manager.js";
 import type { AgentConfig, ChatMsg } from "../types.js";
 
 const MAX_ITERATIONS = 50;
@@ -26,6 +27,8 @@ export class Agent {
   private aborted: boolean = false;
   private currentAbortController: AbortController | null = null;
   private contextManager: ContextManager;
+  private subagentManager: SubagentManager;
+  private progressCallback: ((progress: string) => void) | null = null;
 
   constructor(config: AgentConfig = {}) {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
@@ -48,6 +51,12 @@ export class Agent {
       baseURL: baseURL,
     });
 
+    // 初始化子代理管理器
+    this.subagentManager = new SubagentManager(config);
+
+    // 加载子代理工具
+    this.registry.loadSubagentTools(this.subagentManager);
+
     // Load MCP servers
     if (config.mcpServers?.length) {
       Promise.all(config.mcpServers.map((s) => this.registry.loadMCP(s)));
@@ -55,6 +64,11 @@ export class Agent {
 
     // Setup Ctrl+C handler
     this.setupSignalHandlers();
+  }
+
+  // ─── 设置进度回调 ──────────────────────────────────────────────────────────
+  setProgressCallback(callback: (progress: string) => void) {
+    this.progressCallback = callback;
   }
 
   // ─── Signal Handlers (Ctrl+C) ──────────────────────────────────────────────
@@ -335,5 +349,9 @@ export class Agent {
 
   getContextManager(): ContextManager {
     return this.contextManager;
+  }
+
+  getSubagentManager(): SubagentManager {
+    return this.subagentManager;
   }
 }

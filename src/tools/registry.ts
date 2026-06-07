@@ -26,6 +26,9 @@ import { sqliteQueryTool, sqliteTablesTool, sqliteSchemaTool, mysqlQueryTool, po
 import { memorySaveTool, memoryRecallTool, memoryListTool, memoryDeleteTool, memoryMergeTool } from "./memory.js";
 // Phase 9 — Skills
 import { skillListTool, skillEnableTool, skillDisableTool, skillInfoTool, skillCreateTool, skillUpdateTool, skillDeleteTool } from "./skill.js";
+// Phase 10 — Subagents
+import { createSubagentTools } from "./subagent.js";
+import type { SubagentManager } from "../agent/subagent-manager.js";
 
 // ─── All built-in tools ───────────────────────────────────────────────────────
 const BUILTIN_TOOLS: ToolHandler[] = [
@@ -110,6 +113,14 @@ export class Registry {
 
   constructor() {
     for (const tool of BUILTIN_TOOLS) {
+      this.register(tool);
+    }
+  }
+
+  // ─── 加载子代理工具 ──────────────────────────────────────────────────────
+  loadSubagentTools(manager: SubagentManager) {
+    const tools = createSubagentTools(manager);
+    for (const tool of tools) {
       this.register(tool);
     }
   }

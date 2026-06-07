@@ -17,11 +17,13 @@
     "dotenv": "^17.4.2",
     "openai": "^4.0.0",
     "prompts": "^2.4.2",
-    "tiktoken": "^1.0.22"
+    "tiktoken": "^1.0.22",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/prompts": "^2.4.9",
+    "@types/uuid": "^10.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },
