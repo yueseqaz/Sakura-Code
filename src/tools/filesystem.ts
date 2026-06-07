@@ -143,12 +143,12 @@ export const editFileTool: ToolHandler = {
 
     const oldLines = old_str.split("\n").length;
     const newLines = new_str.split("\n").length;
-    const result = `Edited ${abs}: replaced ${oldLines}-line block with ${newLines} lines`;
 
-    // 生成并显示 diff
+    // 生成简短的 diff 摘要（直接返回给用户看）
     const diff = generateDiff(abs, original, updated);
-    const formatted = formatCompactDiff(diff);
-    return `${result}\n${formatted}`;
+    const diffSummary = formatCompactDiff(diff);
+
+    return `✅ Edited ${abs}\n${diffSummary}`;
   },
 };
 
