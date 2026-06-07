@@ -98,8 +98,7 @@ program
       const ask = (q: string) => new Promise<string>((r) => rl.question(q, r));
 
       console.log("🌸 Sakura Code — AI Coding Agent  (Ctrl+C or 'exit' to quit)\n");
-      console.log("   Type /config for configuration");
-      console.log("   Type /context to view/set context window\n");
+      console.log("   Commands: /help /context /config /save /clear\n");
 
       while (true) {
         const input = prompt ?? (await ask("\x1b[1;32m❯\x1b[0m "));
@@ -131,14 +130,14 @@ program
         }
         if (input.trim() === "/help") {
           console.log(`
-\x1b[1mAvailable commands:\x1b[0m
-  /config   — Configuration
-  /clear    — Clear context
-  /save     — Save session
-  /context  — Show context usage
-  /context set <size> — Set max context (e.g., /context set 128k)
-  /help     — Show this help
-  exit      — Exit
+\x1b[1m🌸 Commands:\x1b[0m
+
+  \x1b[36m/context\x1b[0m          — Context menu (view/set/clear)
+  \x1b[36m/config\x1b[0m           — Configuration
+  \x1b[36m/save\x1b[0m             — Save session
+  \x1b[36m/clear\x1b[0m            — Clear context
+  \x1b[36m/help\x1b[0m             — Show this help
+  \x1b[36mexit\x1b[0m              — Exit
 `);
           continue;
         }
@@ -160,7 +159,7 @@ program
             }
             
             if (isNaN(maxTokens) || maxTokens <= 0) {
-              console.log("\x1b[31m✗ Invalid size. Use format: 128k, 1m, or 128000\x1b[0m\n");
+              console.log("\x1b[31m✗ Invalid size. Use: /context set 128k\x1b[0m\n");
             } else {
               contextManager.setMaxTokens(maxTokens);
               console.log(`\x1b[32m✓ Context window set to ${sizeStr}\x1b[0m\n`);
@@ -168,13 +167,25 @@ program
             continue;
           }
           
-          // /context (显示状态)
+          // /context clear
+          if (parts[1] === "clear") {
+            Object.assign(ctx, new Context());
+            console.log("\x1b[32m✓ Context cleared\x1b[0m\n");
+            continue;
+          }
+          
+          // /context (显示子菜单)
           const status = await contextManager.getStatus(ctx.messages);
           const model = contextManager.getModel();
-          console.log(`\n\x1b[1mContext Usage:\x1b[0m`);
-          console.log(status.formatted);
-          if (model) console.log(`\x1b[90mModel: ${model}\x1b[0m`);
-          console.log(`\x1b[90mMessages: ${ctx.messages.length}\x1b[0m\n`);
+          
+          console.log(`
+\x1b[1m📊 Context:\x1b[0m`);
+          console.log(`  ${status.formatted}`);
+          if (model) console.log(`  \x1b[90mModel: ${model}\x1b[0m`);
+          console.log(`  \x1b[90mMessages: ${ctx.messages.length}\x1b[0m`);
+          console.log(`
+\x1b[90m  /context set <size> — Set max (e.g., 128k, 1m)
+  /context clear      — Clear context\x1b[0m\n`);
           continue;
         }
 
