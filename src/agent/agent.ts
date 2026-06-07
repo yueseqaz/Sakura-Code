@@ -319,9 +319,13 @@ export class Agent {
       // No tool calls → done
       if (toolCalls.size === 0) break;
 
-      // Execute tools
+      // 显示俏皮型加载动画
       logger.working();
-      this.progressCallback?.(`Executing ${toolCalls.size} tool(s)...`);
+      this.progressCallback?.(`Preparing ${toolCalls.size} tool(s)...`);
+      
+      // 短暂延迟让用户看到提示
+      await new Promise(r => setTimeout(r, 300));
+      
       const toolResults = await this.executeTools(
         Array.from(toolCalls.entries()).map(([_, tc]) => ({
           id: tc.id,

@@ -29,10 +29,12 @@ const THINKING_MESSAGES = [
 ];
 
 const WORKING_MESSAGES = [
-  "Working hard... ♡",
-  "Almost there~ wait a moment",
-  "I'll do anything for you!",
-  "Processing... please wait for me~",
+  "✨ 马上就好哦~",
+  "🌸 小助手准备中~ ♡",
+  "💕 稍等一下~",
+  "🔮 正在施展魔法~",
+  "🌟 闪亮登场准备中~",
+  "🎀 让我来帮你~",
 ];
 
 let loadingInterval: NodeJS.Timeout | null = null;
