@@ -28,7 +28,7 @@ export interface DiffResult {
   };
 }
 
-// ─── 生成 Diff ───────────────────────────────────────────────────────────────
+// ─── 生成 Diff（只显示变更部分）───────────────────────────────────────────────
 export function generateDiff(
   filePath: string,
   oldContent: string,
@@ -41,52 +41,92 @@ export function generateDiff(
   let additions = 0;
   let deletions = 0;
   
-  // 简单的逐行比较（可以后续用 Myers 算法优化）
-  const maxLen = Math.max(oldLines.length, newLines.length);
+  // 找出变更的行范围
+  // 简单策略：找到第一个和最后一个不同的行
+  let firstDiff = -1;
+  let lastDiffOld = -1;
+  let lastDiffNew = -1;
   
-  for (let i = 0; i < maxLen; i++) {
-    const oldLine = oldLines[i];
-    const newLine = newLines[i];
-    
-    if (oldLine === undefined) {
-      // 新增行
-      diffLines.push({
-        type: "add",
-        content: newLine,
-        newLine: i + 1,
-      });
-      additions++;
-    } else if (newLine === undefined) {
-      // 删除行
-      diffLines.push({
-        type: "remove",
-        content: oldLine,
-        oldLine: i + 1,
-      });
-      deletions++;
-    } else if (oldLine !== newLine) {
-      // 修改行（先删后加）
-      diffLines.push({
-        type: "remove",
-        content: oldLine,
-        oldLine: i + 1,
-      });
-      diffLines.push({
-        type: "add",
-        content: newLine,
-        newLine: i + 1,
-      });
-      additions++;
-      deletions++;
-    } else {
-      // 未变更行
-      diffLines.push({
-        type: "context",
-        content: oldLine,
-        oldLine: i + 1,
-        newLine: i + 1,
-      });
+  const minLen = Math.min(oldLines.length, newLines.length);
+  
+  // 从前往后找第一个不同的行
+  for (let i = 0; i < minLen; i++) {
+    if (oldLines[i] !== newLines[i]) {
+      firstDiff = i;
+      break;
     }
+  }
+  
+  // 如果没有差异，返回空结果
+  if (firstDiff === -1 && oldLines.length === newLines.length) {
+    return {
+      file: filePath,
+      lines: [],
+      stats: { additions: 0, deletions: 0 },
+    };
+  }
+  
+  // 从后往前找最后一个不同的行
+  for (let i = 1; i <= minLen; i++) {
+    if (oldLines[oldLines.length - i] !== newLines[newLines.length - i]) {
+      lastDiffOld = oldLines.length - i;
+      lastDiffNew = newLines.length - i;
+      break;
+    }
+  }
+  
+  // 如果只有一个差异点
+  if (firstDiff === -1) {
+    // 文件长度不同，差异在末尾
+    firstDiff = minLen;
+    lastDiffOld = oldLines.length - 1;
+    lastDiffNew = newLines.length - 1;
+  }
+  
+  // 生成 diff 行（只包含变更部分）
+  const contextBefore = 2;
+  const contextAfter = 2;
+  
+  // 变更前的上下文
+  const startContext = Math.max(0, firstDiff - contextBefore);
+  for (let i = startContext; i < firstDiff; i++) {
+    diffLines.push({
+      type: "context",
+      content: oldLines[i],
+      oldLine: i + 1,
+      newLine: i + 1,
+    });
+  }
+  
+  // 删除的行
+  for (let i = firstDiff; i <= lastDiffOld; i++) {
+    diffLines.push({
+      type: "remove",
+      content: oldLines[i],
+      oldLine: i + 1,
+    });
+    deletions++;
+  }
+  
+  // 新增的行
+  for (let i = firstDiff; i <= lastDiffNew; i++) {
+    diffLines.push({
+      type: "add",
+      content: newLines[i],
+      newLine: i + 1,
+    });
+    additions++;
+  }
+  
+  // 变更后的上下文
+  const endContext = Math.min(oldLines.length, lastDiffOld + contextAfter + 1);
+  for (let i = lastDiffOld + 1; i < endContext; i++) {
+    diffLines.push({
+      type: "context",
+      content: oldLines[i],
+      oldLine: i + 1,
+      newLine: i + 1,
+    });
   }
   
   return {
@@ -164,23 +204,68 @@ export function formatDiff(result: DiffResult, contextLines: number = 3): string
 }
 
 // ─── 简化的 Diff 显示（只显示变更部分）────────────────────────────────────────
-export function formatCompactDiff(result: DiffResult): string {
+export function formatCompactDiff(result: DiffResult, maxLines: number = 20): string {
   const { file, lines, stats } = result;
   
   const output: string[] = [];
   
   // 文件头
-  output.push(`\n📄 ${file} (${COLORS.green}+${stats.additions}${COLORS.reset} ${COLORS.red}-${stats.deletions}${COLORS.reset})`);
-  output.push(`${COLORS.gray}${"─".repeat(40)}${COLORS.reset}`);
+  output.push(`📄 ${file} (+${stats.additions} -${stats.deletions})`);
+  output.push("─".repeat(40));
   
-  // 只显示变更行
-  lines.forEach((line) => {
-    if (line.type === "add") {
-      output.push(`${COLORS.green}+ ${line.content}${COLORS.reset}`);
-    } else if (line.type === "remove") {
-      output.push(`${COLORS.red}- ${line.content}${COLORS.reset}`);
+  // 找出变更行的位置
+  const changedIndices: number[] = [];
+  lines.forEach((line, i) => {
+    if (line.type === "add" || line.type === "remove") {
+      changedIndices.push(i);
     }
   });
+  
+  if (changedIndices.length === 0) {
+    output.push("(no changes)");
+    return output.join("\n");
+  }
+  
+  // 只显示变更行及其上下文（前后1行）
+  const contextSize = 1;
+  const shownIndices = new Set<number>();
+  
+  for (const idx of changedIndices) {
+    for (let i = Math.max(0, idx - contextSize); i <= Math.min(lines.length - 1, idx + contextSize); i++) {
+      shownIndices.add(i);
+    }
+  }
+  
+  // 按顺序显示
+  let lastShown = -1;
+  let truncated = false;
+  let lineCount = 0;
+  
+  const sortedIndices = Array.from(shownIndices).sort((a, b) => a - b);
+  
+  for (const i of sortedIndices) {
+    // 检查是否需要截断
+    if (lineCount >= maxLines) {
+      truncated = true;
+      break;
+    }
+    
+    // 显示省略号
+    if (lastShown !== -1 && i > lastShown + 1) {
+      output.push("...");
+      lineCount++;
+    }
+    
+    lastShown = i;
+    const line = lines[i];
+    const prefix = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
+    output.push(`${prefix} ${line.content}`);
+    lineCount++;
+  }
+  
+  if (truncated) {
+    output.push(`... (${changedIndices.length} changes total)`);
+  }
   
   return output.join("\n");
 }
