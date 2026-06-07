@@ -363,6 +363,14 @@ export class Agent {
           content = `Error: ${(err as Error).message}`;
         }
 
+        // 如果是文件编辑工具，直接显示 diff（不依赖 AI）
+        if (name === "edit_file" || name === "write_file") {
+          const diffMatch = content.match(/(📄[\s\S]*?────────────────────────────────────[\s\S]*?)(?=\n✅|$)/);
+          if (diffMatch) {
+            process.stdout.write("\n" + diffMatch[1] + "\n");
+          }
+        }
+
         logger.toolResult(content);
 
         return {
