@@ -5,7 +5,7 @@ import { logger } from "../utils/logger.js";
 import { bashTool } from "./bash.js";
 import { readFileTool, writeFileTool, editFileTool, listFilesTool, searchFilesTool } from "./filesystem.js";
 // Phase 2 — Git
-import { gitStatusTool, gitDiffTool, gitCommitTool } from "./git.js";
+import { gitStatusTool, gitDiffTool, gitCommitTool, gitLogTool, gitBranchTool, gitCheckoutTool, gitStashTool, gitMergeTool, gitPullTool, gitPushTool } from "./git.js";
 // Phase 3 — Index & Semantic
 import { projectIndexTool, semanticSearchTool } from "./index.js";
 // Phase 4 — Web
@@ -32,6 +32,13 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   gitStatusTool,
   gitDiffTool,
   gitCommitTool,
+  gitLogTool,
+  gitBranchTool,
+  gitCheckoutTool,
+  gitStashTool,
+  gitMergeTool,
+  gitPullTool,
+  gitPushTool,
   // Phase 3
   projectIndexTool,
   semanticSearchTool,
