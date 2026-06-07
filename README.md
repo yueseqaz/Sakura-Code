@@ -1,4 +1,3 @@
-# Sakura Code - AI 编程助手
 # 🌸 Sakura Code (サクラコード)
 
 A cute but obsessive AI coding agent — similar to Claude Code, but with a yandere personality! ✨
