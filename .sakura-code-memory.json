@@ -8,7 +8,8 @@
     "layer": "context",
     "tags": [],
     "relatedIds": [],
-    "accessCount": 0
+    "accessCount": 1,
+    "lastAccessed": "2026-06-07T15:58:23.827Z"
   },
   {
     "id": "mq3y1edv",
@@ -36,8 +37,26 @@
       "偏好"
     ],
     "relatedIds": [],
-    "accessCount": 1,
+    "accessCount": 19,
     "source": "user",
-    "lastAccessed": "2026-06-07T15:46:34.958Z"
+    "lastAccessed": "2026-06-07T15:58:23.827Z"
+  },
+  {
+    "id": "mq3ym4zy",
+    "category": "preference",
+    "content": "Prefers TypeScript over JavaScript",
+    "importance": "medium",
+    "created_at": "2026-06-07T15:51:29.230Z",
+    "layer": "core",
+    "tags": [
+      "typescript",
+      "javascript",
+      "language",
+      "偏好"
+    ],
+    "relatedIds": [],
+    "accessCount": 6,
+    "source": "user",
+    "lastAccessed": "2026-06-07T15:58:23.827Z"
   }
 ]

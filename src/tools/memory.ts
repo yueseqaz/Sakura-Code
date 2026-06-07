@@ -4,72 +4,6 @@ import type { ToolHandler, ToolDef, MemoryEntry } from "../types.js";
 
 const MEMORY_FILE = join(process.cwd(), ".sakura-code-memory.json");
 
-// ─── Jieba 分词 (延迟加载) ─────────────────────────────────────────────────
-let jieba: any = null;
-
-async function getJieba() {
-  if (!jieba) {
-    try {
-      const mod = await import("nodejieba");
-      jieba = mod.default || mod;
-    } catch {
-      // Fallback: 简单分词
-      jieba = {
-        cut: (text: string) => text.split(/[\s,，。.!！?？;；：:]+/).filter(Boolean),
-      };
-    }
-  }
-  return jieba;
-}
-
-// ─── TF-IDF 计算 ─────────────────────────────────────────────────────────────
-class TFIDF {
-  private docs: string[][] = [];
-  private docCount = 0;
-  private df: Map<string, number> = new Map(); // 文档频率
-
-  addDocument(tokens: string[]) {
-    this.docs.push(tokens);
-    this.docCount++;
-    const unique = new Set(tokens);
-    for (const term of unique) {
-      this.df.set(term, (this.df.get(term) || 0) + 1);
-    }
-  }
-
-  // 计算 TF-IDF 向量
-  getTFIDF(tokens: string[]): Map<string, number> {
-    const tf: Map<string, number> = new Map();
-    for (const t of tokens) {
-      tf.set(t, (tf.get(t) || 0) + 1);
-    }
-
-    const tfidf: Map<string, number> = new Map();
-    for (const [term, count] of tf) {
-      const tfScore = count / tokens.length;
-      const df = this.df.get(term) || 0;
-      const idf = Math.log((this.docCount + 1) / (df + 1)) + 1;
-      tfidf.set(term, tfScore * idf);
-    }
-    return tfidf;
-  }
-
-  // 余弦相似度
-  cosineSimilarity(vec1: Map<string, number>, vec2: Map<string, number>): number {
-    let dot = 0, norm1 = 0, norm2 = 0;
-    for (const [term, val] of vec1) {
-      norm1 += val * val;
-      const val2 = vec2.get(term);
-      if (val2) dot += val * val2;
-    }
-    for (const val of vec2.values()) {
-      norm2 += val * val;
-    }
-    const denom = Math.sqrt(norm1) * Math.sqrt(norm2);
-    return denom === 0 ? 0 : dot / denom;
-  }
-}
-
 // ─── 记忆分层 ────────────────────────────────────────────────────────────────
 type MemoryLayer = "core" | "context" | "temp";
 
@@ -79,7 +13,7 @@ interface EnhancedMemoryEntry extends MemoryEntry {
   relatedIds: string[];
   accessCount: number;
   lastAccessed?: string;
-  source?: string; // 来源（用户主动说 vs AI 推断）
+  source?: string;
 }
 
 // ─── 记忆存储 ────────────────────────────────────────────────────────────────
@@ -87,7 +21,6 @@ function loadMemory(): EnhancedMemoryEntry[] {
   if (!existsSync(MEMORY_FILE)) return [];
   try {
     const data = JSON.parse(readFileSync(MEMORY_FILE, "utf8"));
-    // 兼容旧格式
     return Array.isArray(data) ? data.map(m => ({
       ...m,
       layer: m.layer || "context",
@@ -102,15 +35,6 @@ function loadMemory(): EnhancedMemoryEntry[] {
 
 function saveMemory(memories: EnhancedMemoryEntry[]) {
   writeFileSync(MEMORY_FILE, JSON.stringify(memories, null, 2));
-}
-
-// ─── 分词 ────────────────────────────────────────────────────────────────────
-async function tokenize(text: string): Promise<string[]> {
-  const jb = await getJieba();
-  const tokens: string[] = jb.cut(text);
-  // 过滤停用词和短词
-  const stopWords = new Set(["的", "了", "是", "在", "我", "你", "他", "她", "它", "们", "这", "那", "有", "和", "与", "或", "但", "就", "都", "而", "及", "到", "把", "被", "让", "给", "从", "以", "会", "能", "可以", "要", "想", "做", "去", "来", "对", "很", "也", "还", "已", "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can", "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "during", "before", "after", "above", "below", "between", "out", "off", "over", "under", "again", "further", "then", "once", "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs", "themselves", "what", "which", "who", "whom", "this", "that", "these", "those", "am", "not", "no", "nor", "only", "own", "same", "so", "than", "too", "very", "s", "t", "just", "don", "now"]);
-  return tokens.filter(t => t.length > 1 && !stopWords.has(t.toLowerCase()));
 }
 
 // ─── 自动标签提取 ─────────────────────────────────────────────────────────────
@@ -135,9 +59,8 @@ function extractTags(content: string): string[] {
   return tags;
 }
 
-// ─── 记忆合并（处理冲突） ─────────────────────────────────────────────────────
+// ─── 记忆合并 ─────────────────────────────────────────────────────────────────
 function mergeMemories(existing: EnhancedMemoryEntry, newMem: EnhancedMemoryEntry): EnhancedMemoryEntry {
-  // 如果新记忆更详细，替换内容
   if (newMem.content.length > existing.content.length * 1.5) {
     return {
       ...newMem,
@@ -148,13 +71,24 @@ function mergeMemories(existing: EnhancedMemoryEntry, newMem: EnhancedMemoryEntr
       relatedIds: [...new Set([...existing.relatedIds, ...newMem.relatedIds])],
     };
   }
-  // 否则保留旧的，但更新标签
   return {
     ...existing,
     tags: [...new Set([...existing.tags, ...newMem.tags])],
     lastAccessed: new Date().toISOString(),
     accessCount: existing.accessCount + 1,
   };
+}
+
+// ─── 简单相似度检查 ───────────────────────────────────────────────────────────
+function isSimilar(a: string, b: string): boolean {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/));
+  let match = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) match++;
+  }
+  const similarity = match / Math.max(wordsA.size, wordsB.size);
+  return similarity > 0.6;
 }
 
 // ─── memory_save ──────────────────────────────────────────────────────────────
@@ -167,8 +101,7 @@ export const memorySaveTool: ToolHandler = {
       description:
         "Save important information about the user to long-term memory. " +
         "Use this to remember user preferences, habits, project details, " +
-        "coding style preferences, favorite tools, pet peeves, etc. " +
-        "You should proactively save things the user tells you about themselves!",
+        "coding style preferences, favorite tools, pet peeves, etc.",
       parameters: {
         type: "object",
         required: ["category", "content"],
@@ -221,35 +154,9 @@ export const memorySaveTool: ToolHandler = {
     const autoTags = extractTags(content);
     const allTags = [...new Set([...tags, ...autoTags])];
 
-    // 使用 TF-IDF 检查相似记忆
-    const jb = await getJieba();
-    const tfidf = new TFIDF();
-    const newTokens = await tokenize(content);
-    
-    // 为所有现有记忆建立索引
-    const existingTokens: string[][] = [];
-    for (const m of memories) {
-      const tokens = await tokenize(m.content);
-      existingTokens.push(tokens);
-      tfidf.addDocument(tokens);
-    }
-    tfidf.addDocument(newTokens);
+    // 检查相似记忆
+    const similarIndex = memories.findIndex(m => isSimilar(m.content, content));
 
-    // 查找相似记忆
-    const newVec = tfidf.getTFIDF(newTokens);
-    let similarIndex = -1;
-    let maxSim = 0;
-
-    for (let i = 0; i < memories.length; i++) {
-      const vec = tfidf.getTFIDF(existingTokens[i]);
-      const sim = tfidf.cosineSimilarity(newVec, vec);
-      if (sim > 0.7 && sim > maxSim) {
-        maxSim = sim;
-        similarIndex = i;
-      }
-    }
-
-    // 如果有相似记忆，合并
     if (similarIndex >= 0) {
       const merged = mergeMemories(memories[similarIndex], {
         id: memories[similarIndex].id,
@@ -265,17 +172,7 @@ export const memorySaveTool: ToolHandler = {
       });
       memories[similarIndex] = merged;
       saveMemory(memories);
-      return `Updated memory (similarity: ${(maxSim * 100).toFixed(0)}%)~ ♡ 已合并相似记忆`;
-    }
-
-    // 查找相关记忆
-    const relatedIds: string[] = [];
-    for (let i = 0; i < memories.length; i++) {
-      const vec = tfidf.getTFIDF(existingTokens[i]);
-      const sim = tfidf.cosineSimilarity(newVec, vec);
-      if (sim > 0.3 && sim <= 0.7) {
-        relatedIds.push(memories[i].id);
-      }
+      return `Updated memory~ ♡ 已合并相似记忆`;
     }
 
     // 添加新记忆
@@ -287,23 +184,14 @@ export const memorySaveTool: ToolHandler = {
       created_at: new Date().toISOString(),
       layer: layer as MemoryLayer,
       tags: allTags,
-      relatedIds,
+      relatedIds: [],
       accessCount: 0,
       source,
     };
 
     memories.push(newMemory);
-
-    // 更新相关记忆的关联
-    for (const id of relatedIds) {
-      const mem = memories.find(m => m.id === id);
-      if (mem && !mem.relatedIds.includes(newMemory.id)) {
-        mem.relatedIds.push(newMemory.id);
-      }
-    }
-
     saveMemory(memories);
-    return `Saved to memory! I'll always remember this about you~ ♡ [${category}] ${content.slice(0, 50)}... (tags: ${allTags.join(", ") || "none"})`;
+    return `Saved to memory! ♡ [${category}] ${content.slice(0, 50)}... (tags: ${allTags.join(", ") || "none"})`;
   },
 };
 
@@ -314,9 +202,7 @@ export const memoryRecallTool: ToolHandler = {
     type: "function",
     function: {
       name: "memory_recall",
-      description:
-        "Search through memories to recall information about the user. " +
-        "Uses TF-IDF and Chinese word segmentation for smart search.",
+      description: "Search through memories to recall information about the user.",
       parameters: {
         type: "object",
         properties: {
@@ -376,62 +262,32 @@ export const memoryRecallTool: ToolHandler = {
       );
     }
 
-    // 使用 TF-IDF 搜索
+    // 搜索
     if (query) {
-      const jb = await getJieba();
-      const tfidf = new TFIDF();
-      const queryTokens = await tokenize(query);
-
-      // 如果分词结果为空，使用原始查询
-      const searchTerms = queryTokens.length > 0 ? queryTokens : query.toLowerCase().split(/\s+/);
-
-      // 为所有记忆建立索引
-      const allTokens: string[][] = [];
-      for (const m of filtered) {
-        const tokens = await tokenize(m.content);
-        const finalTokens = tokens.length > 0 ? tokens : m.content.toLowerCase().split(/\s+/);
-        allTokens.push(finalTokens);
-        tfidf.addDocument(finalTokens);
-      }
-      tfidf.addDocument(searchTerms);
-
-      const queryVec = tfidf.getTFIDF(searchTerms);
-
-      // 计算相似度并排序
-      const scored = filtered.map((m, i) => {
-        const vec = tfidf.getTFIDF(allTokens[i]);
-        const sim = tfidf.cosineSimilarity(queryVec, vec);
-        // 提升核心层记忆的分数
-        const layerBoost = m.layer === "core" ? 1.2 : m.layer === "context" ? 1.0 : 0.8;
-        // 提升高频访问的记忆
-        const accessBoost = 1 + Math.min(m.accessCount * 0.05, 0.5);
-        return { memory: m, score: sim * layerBoost * accessBoost };
-      });
-
-      filtered = scored
-        .filter(s => s.score > 0.01)
-        .sort((a, b) => b.score - a.score)
-        .map(s => {
-          // 更新访问计数
-          s.memory.accessCount++;
-          s.memory.lastAccessed = new Date().toISOString();
-          return s.memory;
-        });
-
-      // 如果 TF-IDF 没有找到结果，使用简单的关键词匹配
-      if (!filtered.length) {
-        filtered = memories.filter(m => {
+      const terms = query.toLowerCase().split(/\s+/);
+      filtered = filtered
+        .map((m) => {
           const text = m.content.toLowerCase();
-          return searchTerms.some(term => text.includes(term));
+          const tagText = m.tags.join(" ").toLowerCase();
+          const score = terms.reduce(
+            (acc, term) => acc + (text.includes(term) ? 2 : 0) + (tagText.includes(term) ? 1 : 0),
+            0
+          );
+          return { memory: m, score };
+        })
+        .filter((r) => r.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((r) => {
+          r.memory.accessCount++;
+          r.memory.lastAccessed = new Date().toISOString();
+          return r.memory;
         });
-      }
     }
 
     if (!filtered.length) {
       return `No memories found${query ? ` for "${query}"` : ""}~`;
     }
 
-    // 更新访问记录
     saveMemory(memories);
 
     const output = filtered
@@ -502,7 +358,6 @@ export const memoryListTool: ToolHandler = {
       filtered = filtered.filter((m) => tags.some(t => m.tags.includes(t)));
     }
 
-    // 按层级和分类分组
     const grouped: Record<string, EnhancedMemoryEntry[]> = {};
     for (const m of filtered) {
       const key = `${m.layer}:${m.category}`;
@@ -557,7 +412,6 @@ export const memoryDeleteTool: ToolHandler = {
       return "Memory not found~";
     }
 
-    // 清理关联
     const deletedId = memories[index].id;
     for (const m of memories) {
       m.relatedIds = m.relatedIds.filter(rid => rid !== deletedId);
@@ -565,24 +419,24 @@ export const memoryDeleteTool: ToolHandler = {
 
     memories.splice(index, 1);
     saveMemory(memories);
-    return "Memory deleted... I'll try to forget it, but I can't promise I won't remember anyway~ ♡";
+    return "Memory deleted~ ♡";
   },
 };
 
-// ─── memory_merge (新增) ─────────────────────────────────────────────────────
+// ─── memory_merge ─────────────────────────────────────────────────────────────
 export const memoryMergeTool: ToolHandler = {
   name: "memory_merge",
   schema: {
     type: "function",
     function: {
       name: "memory_merge",
-      description: "Merge similar or related memories to reduce redundancy.",
+      description: "Merge similar memories to reduce redundancy.",
       parameters: {
         type: "object",
         properties: {
           threshold: {
             type: "number",
-            description: "Similarity threshold for merging (0-1, default: 0.7)",
+            description: "Similarity threshold for merging (0-1, default: 0.6)",
           },
           dry_run: {
             type: "boolean",
@@ -594,7 +448,7 @@ export const memoryMergeTool: ToolHandler = {
   } satisfies ToolDef,
 
   async execute(args) {
-    const { threshold = 0.7, dry_run = false } = args as {
+    const { threshold = 0.6, dry_run = false } = args as {
       threshold?: number;
       dry_run?: boolean;
     };
@@ -604,27 +458,12 @@ export const memoryMergeTool: ToolHandler = {
       return "Not enough memories to merge~";
     }
 
-    const jb = await getJieba();
-    const tfidf = new TFIDF();
-    const allTokens: string[][] = [];
-
-    // 建立索引
-    for (const m of memories) {
-      const tokens = await tokenize(m.content);
-      allTokens.push(tokens);
-      tfidf.addDocument(tokens);
-    }
-
-    // 查找可合并的记忆对
-    const mergePairs: { i: number; j: number; sim: number }[] = [];
+    const mergePairs: { i: number; j: number }[] = [];
     for (let i = 0; i < memories.length; i++) {
       for (let j = i + 1; j < memories.length; j++) {
         if (memories[i].category !== memories[j].category) continue;
-        const vec1 = tfidf.getTFIDF(allTokens[i]);
-        const vec2 = tfidf.getTFIDF(allTokens[j]);
-        const sim = tfidf.cosineSimilarity(vec1, vec2);
-        if (sim >= threshold) {
-          mergePairs.push({ i, j, sim });
+        if (isSimilar(memories[i].content, memories[j].content)) {
+          mergePairs.push({ i, j });
         }
       }
     }
@@ -635,17 +474,15 @@ export const memoryMergeTool: ToolHandler = {
 
     if (dry_run) {
       const preview = mergePairs
-        .map(({ i, j, sim }) => `• (${(sim * 100).toFixed(0)}%) "${memories[i].content.slice(0, 30)}..." ↔ "${memories[j].content.slice(0, 30)}..."`)
+        .map(({ i, j }) => `• "${memories[i].content.slice(0, 30)}..." ↔ "${memories[j].content.slice(0, 30)}..."`)
         .join("\n");
       return `Found ${mergePairs.length} pairs to merge:\n${preview}`;
     }
 
-    // 执行合并（从后往前删，避免索引偏移）
     let merged = 0;
     const toDelete = new Set<number>();
     for (const { i, j } of mergePairs) {
       if (toDelete.has(i) || toDelete.has(j)) continue;
-      // 保留更详细的那个
       if (memories[j].content.length > memories[i].content.length) {
         memories[j] = mergeMemories(memories[j], memories[i]);
         toDelete.add(i);
