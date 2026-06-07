@@ -1,4 +1,5 @@
 import type { ChatMsg } from "../types.js";
+import type { ToolHandler, ToolDef } from "../types.js";
 
 // ─── Token 计数器（延迟加载 tiktoken）─────────────────────────────────────────
 let encoder: any = null;
@@ -250,16 +251,42 @@ export class ContextManager {
     maxTokens: number;
     usage: number;
     needsAction: boolean;
+    formatted: string;
   }> {
     const tokenCount = await this.countTokens(messages);
     const usage = tokenCount / this.config.maxTokens;
+    
+    // 格式化输出
+    const formatTokens = (n: number) => {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+      return String(n);
+    };
+    
+    const percent = (usage * 100).toFixed(1);
+    const bar = this.generateProgressBar(usage);
     
     return {
       tokenCount,
       maxTokens: this.config.maxTokens,
       usage,
       needsAction: usage >= this.config.warnThreshold,
+      formatted: `${bar} ${formatTokens(tokenCount)}/${formatTokens(this.config.maxTokens)} (${percent}%)`,
     };
+  }
+
+  // ─── 生成进度条 ─────────────────────────────────────────────────────────────
+  private generateProgressBar(ratio: number): string {
+    const width = 20;
+    const filled = Math.round(ratio * width);
+    const empty = width - filled;
+    
+    let color: string;
+    if (ratio >= 0.9) color = '🔴';
+    else if (ratio >= 0.7) color = '🟡';
+    else color = '🟢';
+    
+    return `${color} [${'█'.repeat(filled)}${'░'.repeat(empty)}]`;
   }
 
   // ─── 重置 ─────────────────────────────────────────────────────────────────

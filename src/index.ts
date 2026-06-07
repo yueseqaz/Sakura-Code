@@ -134,9 +134,18 @@ program
   /config   — Configuration
   /clear    — Clear context
   /save     — Save session
+  /context  — Show context usage
   /help     — Show this help
   exit      — Exit
 `);
+          continue;
+        }
+        if (input.trim() === "/context") {
+          const contextManager = agent.getContextManager();
+          const status = await contextManager.getStatus(ctx.messages);
+          console.log(`\n\x1b[1mContext Usage:\x1b[0m`);
+          console.log(status.formatted);
+          console.log(`\x1b[90mMessages: ${ctx.messages.length}\x1b[0m\n`);
           continue;
         }
 

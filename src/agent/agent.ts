@@ -327,4 +327,8 @@ export class Agent {
   resetTokenUsage(): void {
     this.tokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, requestCount: 0 };
   }
+
+  getContextManager(): ContextManager {
+    return this.contextManager;
+  }
 }
