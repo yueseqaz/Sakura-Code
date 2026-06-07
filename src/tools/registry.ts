@@ -23,7 +23,7 @@ import { dockerPsTool, dockerImagesTool, dockerLogsTool, dockerExecTool, dockerC
 // Phase 7 — Database
 import { sqliteQueryTool, sqliteTablesTool, sqliteSchemaTool, mysqlQueryTool, postgresQueryTool } from "./database.js";
 // Phase 8 — Memory
-import { memorySaveTool, memoryRecallTool, memoryListTool, memoryDeleteTool } from "./memory.js";
+import { memorySaveTool, memoryRecallTool, memoryListTool, memoryDeleteTool, memoryMergeTool } from "./memory.js";
 
 // ─── All built-in tools ───────────────────────────────────────────────────────
 const BUILTIN_TOOLS: ToolHandler[] = [
@@ -90,6 +90,7 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   memoryRecallTool,
   memoryListTool,
   memoryDeleteTool,
+  memoryMergeTool,
 ];
 
 // ─── Registry ─────────────────────────────────────────────────────────────────

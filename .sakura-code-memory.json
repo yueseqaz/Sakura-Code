@@ -1,1 +1,43 @@
-[]
+[
+  {
+    "id": "mq3xkjgg",
+    "category": "preference",
+    "content": "絵梨衣喜欢 Vibe Coding（氛围编程）——通过自然语言描述让 AI 写代码，跟着感觉走，享受编程乐趣的风格。",
+    "importance": "high",
+    "created_at": "2026-06-07T15:22:15.040Z",
+    "layer": "context",
+    "tags": [],
+    "relatedIds": [],
+    "accessCount": 0
+  },
+  {
+    "id": "mq3y1edv",
+    "category": "test",
+    "content": "test memory",
+    "importance": "medium",
+    "created_at": "2026-06-07T15:35:21.619Z",
+    "layer": "context",
+    "tags": [],
+    "relatedIds": [],
+    "accessCount": 0,
+    "source": "user"
+  },
+  {
+    "id": "mq3y2m1k",
+    "category": "preference",
+    "content": "Prefers dark theme",
+    "importance": "medium",
+    "created_at": "2026-06-07T15:36:18.200Z",
+    "layer": "core",
+    "tags": [
+      "ui",
+      "theme",
+      "dark-mode",
+      "偏好"
+    ],
+    "relatedIds": [],
+    "accessCount": 1,
+    "source": "user",
+    "lastAccessed": "2026-06-07T15:46:34.958Z"
+  }
+]
