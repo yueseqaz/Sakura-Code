@@ -4,6 +4,38 @@ import type { ToolHandler, ToolDef, MemoryEntry } from "../types.js";
 
 const MEMORY_FILE = join(process.cwd(), ".sakura-code-memory.json");
 
+// ─── 启动时清除 temp 记忆 ─────────────────────────────────────────────────────
+export function cleanTempMemories(): number {
+  const memories = loadMemory();
+  const before = memories.length;
+  const filtered = memories.filter(m => m.layer !== "temp");
+  const cleaned = before - filtered.length;
+  if (cleaned > 0) {
+    saveMemory(filtered);
+  }
+  return cleaned;
+}
+
+// ─── 进程退出时清除 temp ──────────────────────────────────────────────────────
+let exitHandlerRegistered = false;
+
+function registerExitHandler() {
+  if (exitHandlerRegistered) return;
+  exitHandlerRegistered = true;
+
+  const cleanup = () => {
+    const cleaned = cleanTempMemories();
+    if (cleaned > 0) {
+      // 不能用 logger，因为进程正在退出
+      process.stderr.write(`\n🧹 Cleaned ${cleaned} temp memories\n`);
+    }
+  };
+
+  process.on("exit", cleanup);
+  process.on("SIGINT", () => { cleanup(); process.exit(0); });
+  process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+}
+
 // ─── 记忆分层 ────────────────────────────────────────────────────────────────
 type MemoryLayer = "core" | "context" | "temp";
 
@@ -153,6 +185,9 @@ export const memorySaveTool: ToolHandler = {
     const memories = loadMemory();
     const autoTags = extractTags(content);
     const allTags = [...new Set([...tags, ...autoTags])];
+
+    // 注册退出处理器
+    registerExitHandler();
 
     // 检查相似记忆
     const similarIndex = memories.findIndex(m => isSimilar(m.content, content));

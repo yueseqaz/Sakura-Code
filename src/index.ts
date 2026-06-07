@@ -4,10 +4,17 @@ import { ConfigManager } from "./config.js";
 import { firstTimeSetup, interactiveConfig } from "./interactive-config.js";
 import { Agent } from "./agent/agent.js";
 import { Context } from "./agent/context.js";
+import { cleanTempMemories } from "./tools/memory.js";
 import { createInterface } from "node:readline";
 
 // Initialize config
 const configManager = new ConfigManager();
+
+// 启动时清除 temp 记忆
+const cleanedTemp = cleanTempMemories();
+if (cleanedTemp > 0) {
+  console.log(`\x1b[90m🧹 Cleaned ${cleanedTemp} temp memories from last session\x1b[0m`);
+}
 
 const SESSION_FILE = ".sakura-code-session.json";
 

@@ -28,34 +28,5 @@
     "accessCount": 7,
     "source": "user",
     "lastAccessed": "2026-06-07T16:02:55.153Z"
-  },
-  {
-    "id": "mq3zb8xq",
-    "category": "preference",
-    "content": "Prefers dark theme",
-    "importance": "medium",
-    "created_at": "2026-06-07T16:11:00.734Z",
-    "layer": "core",
-    "tags": [
-      "ui",
-      "theme",
-      "dark-mode",
-      "偏好"
-    ],
-    "relatedIds": [],
-    "accessCount": 0,
-    "source": "user"
-  },
-  {
-    "id": "mq3zb8xr",
-    "category": "test",
-    "content": "test memory",
-    "importance": "medium",
-    "created_at": "2026-06-07T16:11:00.735Z",
-    "layer": "context",
-    "tags": [],
-    "relatedIds": [],
-    "accessCount": 0,
-    "source": "user"
   }
 ]
