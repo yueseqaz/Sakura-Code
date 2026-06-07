@@ -5,6 +5,7 @@ import {
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { assertSafePath, DEFAULT_POLICY, truncate } from "../utils/security.js";
+import { generateDiff, formatCompactDiff } from "../utils/diff.js";
 import type {
   ToolHandler, ToolDef,
   ReadFileArgs, WriteFileArgs, EditFileArgs, ListFilesArgs, SearchFilesArgs,
@@ -80,11 +81,23 @@ export const writeFileTool: ToolHandler = {
     const { path, content, create_dirs = true } = args as unknown as WriteFileArgs;
     const abs = assertSafePath(path);
 
+    // 读取旧内容（如果文件存在）
+    const oldContent = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+
     if (create_dirs) mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content, "utf8");
 
     const lines = content.split("\n").length;
-    return `Written ${content.length} chars (${lines} lines) to ${abs}`;
+    const result = `Written ${content.length} chars (${lines} lines) to ${abs}`;
+
+    // 生成并显示 diff
+    if (oldContent && oldContent !== content) {
+      const diff = generateDiff(abs, oldContent, content);
+      const formatted = formatCompactDiff(diff);
+      return `${result}\n${formatted}`;
+    }
+
+    return result;
   },
 };
 
@@ -130,7 +143,12 @@ export const editFileTool: ToolHandler = {
 
     const oldLines = old_str.split("\n").length;
     const newLines = new_str.split("\n").length;
-    return `Edited ${abs}: replaced ${oldLines}-line block with ${newLines} lines`;
+    const result = `Edited ${abs}: replaced ${oldLines}-line block with ${newLines} lines`;
+
+    // 生成并显示 diff
+    const diff = generateDiff(abs, original, updated);
+    const formatted = formatCompactDiff(diff);
+    return `${result}\n${formatted}`;
   },
 };
 
