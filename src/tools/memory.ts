@@ -296,7 +296,7 @@ export const memoryRecallTool: ToolHandler = {
         const layerIcon = m.layer === "core" ? "💎" : m.layer === "context" ? "📋" : "⏳";
         const importanceIcon = m.importance === "high" ? "⭐" : "";
         const tagsStr = m.tags.length > 0 ? ` [${m.tags.join(",")}]` : "";
-        return `${layerIcon} [${m.category}]${tagsStr} ${m.content} ${importanceIcon}`;
+        return `${layerIcon} [${m.id}] [${m.category}]${tagsStr} ${m.content} ${importanceIcon}`;
       })
       .join("\n");
 
@@ -375,7 +375,7 @@ export const memoryListTool: ToolHandler = {
         const lines = items.map((m) => {
           const tagsStr = m.tags.length > 0 ? ` [${m.tags.join(",")}]` : "";
           const importance = m.importance === "high" ? " ⭐" : "";
-          return `  • ${m.content}${tagsStr}${importance}`;
+          return `  • [${m.id}] ${m.content}${tagsStr}${importance}`;
         }).join("\n");
         return `${header}\n${lines}`;
       })
@@ -392,34 +392,83 @@ export const memoryDeleteTool: ToolHandler = {
     type: "function",
     function: {
       name: "memory_delete",
-      description: "Delete a specific memory by its ID.",
+      description: "Delete a specific memory by ID, content, or query.",
       parameters: {
         type: "object",
-        required: ["id"],
         properties: {
           id: { type: "string", description: "Memory ID to delete" },
+          content: { type: "string", description: "Delete by matching content (exact or partial)" },
+          query: { type: "string", description: "Search and delete matching memories" },
         },
       },
     },
   } satisfies ToolDef,
 
   async execute(args) {
-    const { id } = args as { id: string };
+    const { id, content, query } = args as { id?: string; content?: string; query?: string };
     const memories = loadMemory();
-    const index = memories.findIndex((m) => m.id === id);
 
-    if (index === -1) {
-      return "Memory not found~";
+    // 按 ID 删除
+    if (id) {
+      const index = memories.findIndex((m) => m.id === id);
+      if (index === -1) return "Memory not found~";
+      
+      const deletedId = memories[index].id;
+      for (const m of memories) {
+        m.relatedIds = m.relatedIds.filter(rid => rid !== deletedId);
+      }
+      memories.splice(index, 1);
+      saveMemory(memories);
+      return "Memory deleted~ ♡";
     }
 
-    const deletedId = memories[index].id;
-    for (const m of memories) {
-      m.relatedIds = m.relatedIds.filter(rid => rid !== deletedId);
+    // 按内容删除（精确或部分匹配）
+    if (content) {
+      const lowerContent = content.toLowerCase();
+      const matches = memories.filter(m => 
+        m.content.toLowerCase().includes(lowerContent) || 
+        lowerContent.includes(m.content.toLowerCase())
+      );
+      
+      if (!matches.length) return `No memories found matching "${content}"~`;
+      
+      for (const match of matches) {
+        const index = memories.indexOf(match);
+        if (index !== -1) {
+          for (const m of memories) {
+            m.relatedIds = m.relatedIds.filter(rid => rid !== match.id);
+          }
+          memories.splice(index, 1);
+        }
+      }
+      saveMemory(memories);
+      return `Deleted ${matches.length} memory(ies) matching "${content}"~ ♡`;
     }
 
-    memories.splice(index, 1);
-    saveMemory(memories);
-    return "Memory deleted~ ♡";
+    // 按查询删除
+    if (query) {
+      const terms = query.toLowerCase().split(/\s+/);
+      const matches = memories.filter(m => {
+        const text = m.content.toLowerCase() + " " + m.tags.join(" ").toLowerCase();
+        return terms.some(term => text.includes(term));
+      });
+      
+      if (!matches.length) return `No memories found matching "${query}"~`;
+      
+      for (const match of matches) {
+        const index = memories.indexOf(match);
+        if (index !== -1) {
+          for (const m of memories) {
+            m.relatedIds = m.relatedIds.filter(rid => rid !== match.id);
+          }
+          memories.splice(index, 1);
+        }
+      }
+      saveMemory(memories);
+      return `Deleted ${matches.length} memory(ies) matching "${query}"~ ♡`;
+    }
+
+    return "Please provide id, content, or query to delete memories~";
   },
 };
 
