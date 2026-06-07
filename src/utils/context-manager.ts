@@ -1,6 +1,63 @@
 import type { ChatMsg } from "../types.js";
 import type { ToolHandler, ToolDef } from "../types.js";
 
+// ─── 模型 Context Window 映射 ─────────────────────────────────────────────────
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  // OpenAI
+  "gpt-4o": 128000,
+  "gpt-4o-mini": 128000,
+  "gpt-4-turbo": 128000,
+  "gpt-4": 8192,
+  "gpt-4-32k": 32768,
+  "gpt-3.5-turbo": 16385,
+  "gpt-3.5-turbo-16k": 16385,
+  "o1": 200000,
+  "o1-mini": 128000,
+  "o1-pro": 200000,
+  // Anthropic
+  "claude-3-opus": 200000,
+  "claude-3-sonnet": 200000,
+  "claude-3-haiku": 200000,
+  "claude-3.5-sonnet": 200000,
+  "claude-3.5-haiku": 200000,
+  // DeepSeek
+  "deepseek-chat": 128000,
+  "deepseek-coder": 128000,
+  "deepseek-reasoner": 128000,
+  // Xiaomi
+  "mimo-v2.5-pro": 128000,
+  "mimo-v2.5-flash": 128000,
+  // Google
+  "gemini-pro": 128000,
+  "gemini-1.5-pro": 1000000,
+  "gemini-1.5-flash": 1000000,
+  "gemini-2.0-flash": 1000000,
+};
+
+// ─── 获取模型 Context Window ──────────────────────────────────────────────────
+export function getModelContextWindow(model: string): number {
+  // 精确匹配
+  if (MODEL_CONTEXT_WINDOWS[model]) {
+    return MODEL_CONTEXT_WINDOWS[model];
+  }
+  
+  // 模糊匹配（去掉版本后缀）
+  const baseModel = model.replace(/-\d{4}$|\..*$/, "");
+  if (MODEL_CONTEXT_WINDOWS[baseModel]) {
+    return MODEL_CONTEXT_WINDOWS[baseModel];
+  }
+  
+  // 前缀匹配
+  for (const [key, value] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
+    if (model.startsWith(key) || key.startsWith(model)) {
+      return value;
+    }
+  }
+  
+  // 默认值
+  return 128000;
+}
+
 // ─── Token 计数器（延迟加载 tiktoken）─────────────────────────────────────────
 let encoder: any = null;
 
@@ -23,6 +80,7 @@ export interface ContextConfig {
   compressThreshold: number;  // 压缩阈值 (0-1)
   keepRecentRounds: number;   // 保留最近轮数
   provider?: string;          // API provider
+  model?: string;             // 模型名（用于自动获取 context window）
 }
 
 const DEFAULT_CONFIG: ContextConfig = {
@@ -40,6 +98,11 @@ export class ContextManager {
 
   constructor(config: Partial<ContextConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    
+    // 如果提供了模型名，自动获取 context window
+    if (config.model && !config.maxTokens) {
+      this.config.maxTokens = getModelContextWindow(config.model);
+    }
   }
 
   // ─── Token 计数 ──────────────────────────────────────────────────────────

@@ -42,7 +42,8 @@ export class Agent {
 
     // 初始化 context manager
     this.contextManager = new ContextManager({
-      maxTokens: config.contextWindow || 128000,
+      maxTokens: config.contextWindow,
+      model: model,
       provider: config.provider,
     });
 
