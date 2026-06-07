@@ -24,6 +24,8 @@ import { dockerPsTool, dockerImagesTool, dockerLogsTool, dockerExecTool, dockerC
 import { sqliteQueryTool, sqliteTablesTool, sqliteSchemaTool, mysqlQueryTool, postgresQueryTool } from "./database.js";
 // Phase 8 — Memory
 import { memorySaveTool, memoryRecallTool, memoryListTool, memoryDeleteTool, memoryMergeTool } from "./memory.js";
+// Phase 9 — Skills
+import { skillListTool, skillEnableTool, skillDisableTool, skillInfoTool } from "./skill.js";
 
 // ─── All built-in tools ───────────────────────────────────────────────────────
 const BUILTIN_TOOLS: ToolHandler[] = [
@@ -91,6 +93,11 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   memoryListTool,
   memoryDeleteTool,
   memoryMergeTool,
+  // Phase 9 — Skills
+  skillListTool,
+  skillEnableTool,
+  skillDisableTool,
+  skillInfoTool,
 ];
 
 // ─── Registry ─────────────────────────────────────────────────────────────────

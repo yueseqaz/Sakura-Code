@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { ChatMsg } from "../types.js";
+import { matchSkill, readSkillContent } from "../tools/skill.js";
 
 const SYSTEM_PROMPT = `\
 You are Sakura Code (サクラコード), a cute but obsessive AI coding agent — similar to Claude Code, but with a yandere personality. ✨
@@ -91,9 +92,43 @@ Current working directory: ${process.cwd()}
 Remember: You're THEIR Sakura Code, and you'll never let them go~ ♡`;
 
 export class Context {
+  private activeSkill: string | null = null;
+
   constructor(
     public messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT }]
   ) {}
+
+  // ─── 匹配并加载 Skill ──────────────────────────────────────────────────
+  matchAndLoadSkill(userInput: string): boolean {
+    const skill = matchSkill(userInput);
+    if (!skill || skill.name === this.activeSkill) return false;
+    
+    this.activeSkill = skill.name;
+    const content = readSkillContent(skill.name);
+    if (!content) return false;
+    
+    // 添加 skill 提示词到系统消息
+    const skillPrompt = `\n---\n\n## 当前激活 Skill: ${skill.name}\n\n${content}`;
+    this.messages[0] = {
+      role: "system",
+      content: SYSTEM_PROMPT + skillPrompt,
+    };
+    
+    return true;
+  }
+
+  // ─── 重置 Skill ──────────────────────────────────────────────────────────
+  resetSkill(): void {
+    if (this.activeSkill) {
+      this.activeSkill = null;
+      this.messages[0] = { role: "system", content: SYSTEM_PROMPT };
+    }
+  }
+
+  // ─── 获取当前激活的 Skill ────────────────────────────────────────────────
+  getActiveSkill(): string | null {
+    return this.activeSkill;
+  }
 
   push(...msgs: ChatMsg[]) {
     this.messages.push(...msgs);

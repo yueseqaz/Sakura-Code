@@ -99,6 +99,9 @@ export class Agent {
 
   // ─── Main Agent Loop ──────────────────────────────────────────────────────
   async run(ctx: Context, userInput: string): Promise<void> {
+    // 匹配并加载 Skill
+    ctx.matchAndLoadSkill(userInput);
+    
     ctx.push({ role: "user", content: userInput });
     this.aborted = false;
 
