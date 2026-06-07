@@ -34,28 +34,51 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "gemini-2.0-flash": 1000000,
 };
 
-// ─── 获取模型 Context Window ──────────────────────────────────────────────────
-export function getModelContextWindow(model: string): number {
-  // 精确匹配
-  if (MODEL_CONTEXT_WINDOWS[model]) {
-    return MODEL_CONTEXT_WINDOWS[model];
-  }
-  
-  // 模糊匹配（去掉版本后缀）
-  const baseModel = model.replace(/-\d{4}$|\..*$/, "");
-  if (MODEL_CONTEXT_WINDOWS[baseModel]) {
-    return MODEL_CONTEXT_WINDOWS[baseModel];
-  }
-  
-  // 前缀匹配
-  for (const [key, value] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
-    if (model.startsWith(key) || key.startsWith(model)) {
-      return value;
+// ─── 获取模型 Context Window（优先 API，回退映射表）──────────────────────────
+export async function getModelContextWindow(model: string, apiKey?: string, baseURL?: string): Promise<number> {
+  // 1. 尝试从 API 获取
+  if (apiKey && baseURL) {
+    try {
+      const response = await fetch(`${baseURL}/models`, {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (response.ok) {
+        const data = await response.json() as any;
+        const models = data.data || [];
+        const found = models.find((m: any) => m.id === model);
+        
+        if (found?.context_window) {
+          return found.context_window;
+        }
+        
+        // 模糊匹配
+        const baseModel = model.replace(/-\d{4}$|\..*$/, "");
+        const fuzzy = models.find((m: any) => m.id.startsWith(baseModel));
+        if (fuzzy?.context_window) {
+          return fuzzy.context_window;
+        }
+      }
+    } catch {
+      // API 获取失败，使用映射表
     }
   }
   
-  // 默认值
-  return 128000;
+  // 2. 回退到映射表
+  return MODEL_CONTEXT_WINDOWS[model] 
+    || MODEL_CONTEXT_WINDOWS[model.replace(/-\d{4}$|\..*$/, "")] 
+    || 128000;
+}
+
+// ─── 同步版本（仅映射表）──────────────────────────────────────────────────────
+export function getModelContextWindowSync(model: string): number {
+  return MODEL_CONTEXT_WINDOWS[model] 
+    || MODEL_CONTEXT_WINDOWS[model.replace(/-\d{4}$|\..*$/, "")] 
+    || 128000;
 }
 
 // ─── Token 计数器（延迟加载 tiktoken）─────────────────────────────────────────
@@ -81,6 +104,8 @@ export interface ContextConfig {
   keepRecentRounds: number;   // 保留最近轮数
   provider?: string;          // API provider
   model?: string;             // 模型名（用于自动获取 context window）
+  apiKey?: string;            // API key（用于查询 models 接口）
+  baseURL?: string;           // API base URL
 }
 
 const DEFAULT_CONFIG: ContextConfig = {
@@ -95,14 +120,42 @@ export class ContextManager {
   private config: ContextConfig;
   private lastUsage: { prompt: number; completion: number; total: number } | null = null;
   private isCompressing = false;
+  private initialized = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor(config: Partial<ContextConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    
-    // 如果提供了模型名，自动获取 context window
-    if (config.model && !config.maxTokens) {
-      this.config.maxTokens = getModelContextWindow(config.model);
+  }
+
+  // ─── 异步初始化（从 API 获取 context window）────────────────────────────
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = this._doInit();
+    await this.initPromise;
+    this.initialized = true;
+  }
+
+  private async _doInit(): Promise<void> {
+    // 如果提供了模型名但没有 maxTokens，从 API 获取
+    if (this.config.model && this.config.maxTokens === DEFAULT_CONFIG.maxTokens) {
+      const maxTokens = await getModelContextWindow(
+        this.config.model,
+        this.config.apiKey,
+        this.config.baseURL
+      );
+      this.config.maxTokens = maxTokens;
     }
+  }
+
+  // ─── 获取当前配置 ───────────────────────────────────────────────────────────
+  getMaxTokens(): number {
+    return this.config.maxTokens;
+  }
+
+  getModel(): string | undefined {
+    return this.config.model;
   }
 
   // ─── Token 计数 ──────────────────────────────────────────────────────────

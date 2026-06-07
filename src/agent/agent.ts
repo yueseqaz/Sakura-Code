@@ -42,9 +42,10 @@ export class Agent {
 
     // 初始化 context manager
     this.contextManager = new ContextManager({
-      maxTokens: config.contextWindow,
       model: model,
       provider: config.provider,
+      apiKey: apiKey,
+      baseURL: baseURL,
     });
 
     // Load MCP servers
@@ -108,6 +109,9 @@ export class Agent {
 
   // ─── Main Agent Loop ──────────────────────────────────────────────────────
   async run(ctx: Context, userInput: string): Promise<void> {
+    // 初始化 context manager（从 API 获取 context window）
+    await this.contextManager.init();
+    
     // 匹配并加载 Skill
     ctx.matchAndLoadSkill(userInput);
     
