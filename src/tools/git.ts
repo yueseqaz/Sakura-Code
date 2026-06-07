@@ -899,3 +899,206 @@ export const gitBisectTool: ToolHandler = {
     return git(["bisect", "log"], abs) || "No bisect in progress.";
   },
 };
+
+// ─── git_reflog ───────────────────────────────────────────────────────────────
+export const gitReflogTool: ToolHandler = {
+  name: "git_reflog",
+  schema: {
+    type: "function",
+    function: {
+      name: "git_reflog",
+      description: "Show reference log (useful for recovering lost commits).",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Repo directory (default: cwd)" },
+          count: { type: "number", description: "Number of entries to show (default: 20)" },
+          all: { type: "boolean", description: "Show reflog for all refs" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { path = ".", count = 20, all } = args as {
+      path?: string; count?: number; all?: boolean;
+    };
+    const abs = assertSafePath(path);
+
+    const reflogArgs = ["reflog"];
+    if (all) reflogArgs.push("--all");
+    reflogArgs.push(`-${count}`);
+
+    return git(reflogArgs, abs) || "No reflog entries found.";
+  },
+};
+
+// ─── git_worktree ─────────────────────────────────────────────────────────────
+export const gitWorktreeTool: ToolHandler = {
+  name: "git_worktree",
+  schema: {
+    type: "function",
+    function: {
+      name: "git_worktree",
+      description: "Manage multiple working trees for the same repo.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Repo directory (default: cwd)" },
+          action: { type: "string", enum: ["list", "add", "remove", "prune"], description: "Worktree action (default: list)" },
+          worktree_path: { type: "string", description: "Path for new worktree (for add)" },
+          branch: { type: "string", description: "Branch for new worktree" },
+          force: { type: "boolean", description: "Force remove" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { path = ".", action = "list", worktree_path, branch, force } = args as {
+      path?: string; action?: string; worktree_path?: string; branch?: string; force?: boolean;
+    };
+    const abs = assertSafePath(path);
+
+    if (action === "list") return git(["worktree", "list"], abs);
+    if (action === "prune") return git(["worktree", "prune"], abs) || "Pruned.";
+    if (action === "remove") {
+      if (!worktree_path) return "Error: Worktree path is required.";
+      const rmArgs = ["worktree", "remove"];
+      if (force) rmArgs.push("--force");
+      rmArgs.push(worktree_path);
+      return git(rmArgs, abs);
+    }
+    if (action === "add") {
+      if (!worktree_path) return "Error: Worktree path is required.";
+      const addArgs = ["worktree", "add", worktree_path];
+      if (branch) addArgs.push(branch);
+      return git(addArgs, abs) || `Worktree created at ${worktree_path}`;
+    }
+
+    return git(["worktree", "list"], abs);
+  },
+};
+
+// ─── git_grep ─────────────────────────────────────────────────────────────────
+export const gitGrepTool: ToolHandler = {
+  name: "git_grep",
+  schema: {
+    type: "function",
+    function: {
+      name: "git_grep",
+      description: "Search for patterns in tracked files (faster than grep for git repos).",
+      parameters: {
+        type: "object",
+        required: ["pattern"],
+        properties: {
+          path: { type: "string", description: "Repo directory (default: cwd)" },
+          pattern: { type: "string", description: "Search pattern (regex supported)" },
+          file_pattern: { type: "string", description: "Filter by file pattern (e.g., '*.ts')" },
+          ignore_case: { type: "boolean", description: "Case insensitive search" },
+          count: { type: "boolean", description: "Show only match count per file" },
+          context: { type: "number", description: "Show N lines of context around matches" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { path = ".", pattern, file_pattern, ignore_case, count, context } = args as {
+      path?: string; pattern: string; file_pattern?: string; ignore_case?: boolean; count?: boolean; context?: number;
+    };
+    const abs = assertSafePath(path);
+
+    const grepArgs = ["grep"];
+    if (ignore_case) grepArgs.push("-i");
+    if (count) grepArgs.push("-c");
+    if (context) grepArgs.push(`-C${context}`);
+    grepArgs.push(pattern);
+    if (file_pattern) grepArgs.push("--", file_pattern);
+
+    return truncate(git(grepArgs, abs) || "No matches found.", 32_000);
+  },
+};
+
+// ─── git_config ───────────────────────────────────────────────────────────────
+export const gitConfigTool: ToolHandler = {
+  name: "git_config",
+  schema: {
+    type: "function",
+    function: {
+      name: "git_config",
+      description: "View or modify git configuration.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Repo directory (default: cwd)" },
+          action: { type: "string", enum: ["get", "set", "list"], description: "Config action (default: list)" },
+          key: { type: "string", description: "Config key (e.g., 'user.name')" },
+          value: { type: "string", description: "Config value (for set)" },
+          global: { type: "boolean", description: "Use global config" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { path = ".", action = "list", key, value, global } = args as {
+      path?: string; action?: string; key?: string; value?: string; global?: boolean;
+    };
+    const abs = assertSafePath(path);
+
+    if (action === "list") {
+      return git(["config", "--list"], abs);
+    }
+    if (action === "get") {
+      if (!key) return "Error: Config key is required.";
+      return git(["config", key], abs) || "Not set.";
+    }
+    if (action === "set") {
+      if (!key) return "Error: Config key is required.";
+      const setArgs = ["config"];
+      if (global) setArgs.push("--global");
+      setArgs.push(key);
+      if (value) setArgs.push(value);
+      return git(setArgs, abs) || "Config updated.";
+    }
+
+    return git(["config", "--list"], abs);
+  },
+};
+
+// ─── git_init ─────────────────────────────────────────────────────────────────
+export const gitInitTool: ToolHandler = {
+  name: "git_init",
+  schema: {
+    type: "function",
+    function: {
+      name: "git_init",
+      description: "Initialize a new git repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Directory to initialize (default: cwd)" },
+          bare: { type: "boolean", description: "Create bare repository" },
+          template: { type: "string", description: "Template directory" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { path = ".", bare, template } = args as {
+      path?: string; bare?: boolean; template?: string;
+    };
+    
+    const initArgs = ["init"];
+    if (bare) initArgs.push("--bare");
+    if (template) initArgs.push(`--template=${template}`);
+    initArgs.push(path);
+
+    const result = spawnSync("git", initArgs, { encoding: "utf8" });
+    if (result.error) return `Error: ${result.error.message}`;
+    if (result.status !== 0) return `Error: ${result.stderr}`;
+    return result.stdout || "Repository initialized.";
+  },
+};

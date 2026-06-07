@@ -9,7 +9,8 @@ import {
   gitStatusTool, gitDiffTool, gitCommitTool, gitLogTool, gitBranchTool, gitCheckoutTool, 
   gitStashTool, gitMergeTool, gitPullTool, gitPushTool, gitCloneTool, gitAddTool, 
   gitResetTool, gitRevertTool, gitRebaseTool, gitFetchTool, gitTagTool, gitCherryPickTool,
-  gitBlameTool, gitRemoteTool, gitShowTool, gitCleanTool, gitSubmoduleTool, gitBisectTool
+  gitBlameTool, gitRemoteTool, gitShowTool, gitCleanTool, gitSubmoduleTool, gitBisectTool,
+  gitReflogTool, gitWorktreeTool, gitGrepTool, gitConfigTool, gitInitTool
 } from "./git.js";
 // Phase 3 — Index & Semantic
 import { projectIndexTool, semanticSearchTool } from "./index.js";
@@ -58,6 +59,11 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   gitCleanTool,
   gitSubmoduleTool,
   gitBisectTool,
+  gitReflogTool,
+  gitWorktreeTool,
+  gitGrepTool,
+  gitConfigTool,
+  gitInitTool,
   // Phase 3
   projectIndexTool,
   semanticSearchTool,
