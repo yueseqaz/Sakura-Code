@@ -138,19 +138,37 @@ export class Context {
     return this.activeSkill;
   }
 
+  // ─── 恢复 Skill（用于 session 恢复）────────────────────────────────────
+  restoreSkill(skillName: string): void {
+    const content = readSkillContent(skillName);
+    if (content) {
+      this.activeSkill = skillName;
+      const skillPrompt = `\n---\n\n## 当前激活 Skill: ${skillName}\n\n${content}`;
+      this.messages[0] = {
+        role: "system",
+        content: SYSTEM_PROMPT + skillPrompt,
+      };
+    }
+  }
+
   push(...msgs: ChatMsg[]) {
     this.messages.push(...msgs);
   }
 
   save(path: string) {
-    writeFileSync(path, JSON.stringify({ messages: this.messages }, null, 2));
+    writeFileSync(path, JSON.stringify({ messages: this.messages, activeSkill: this.activeSkill }, null, 2));
   }
 
   static load(path: string): Context {
     if (!existsSync(path)) return new Context();
     try {
       const data = JSON.parse(readFileSync(path, "utf8"));
-      return new Context(data.messages ?? []);
+      const ctx = new Context(data.messages ?? []);
+      // 恢复 activeSkill
+      if (data.activeSkill) {
+        ctx.restoreSkill(data.activeSkill);
+      }
+      return ctx;
     } catch {
       return new Context();
     }

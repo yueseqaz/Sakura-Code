@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ToolHandler, ToolDef } from "../types.js";
 
@@ -21,6 +21,30 @@ export interface Skill extends SkillMeta {
   content?: string; // SKILL.md 内容，延迟加载
 }
 
+// ─── 缓存 ────────────────────────────────────────────────────────────────────
+let skillsCache: Skill[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5000; // 5秒缓存
+
+function invalidateCache() {
+  skillsCache = null;
+  cacheTimestamp = 0;
+}
+
+// ─── 路径安全校验 ─────────────────────────────────────────────────────────────
+function validateSkillName(name: string): boolean {
+  // 只允许小写字母、数字、连字符，不允许路径分隔符
+  return /^[a-z0-9-]+$/.test(name);
+}
+
+function getSafeSkillDir(name: string): string | null {
+  if (!validateSkillName(name)) return null;
+  const skillDir = resolve(SKILLS_DIR, name);
+  // 确保解析后的路径仍在 SKILLS_DIR 下
+  if (!skillDir.startsWith(resolve(SKILLS_DIR))) return null;
+  return skillDir;
+}
+
 // ─── 确保目录存在 ────────────────────────────────────────────────────────────
 function ensureSkillsDir() {
   if (!existsSync(SKILLS_DIR)) {
@@ -28,8 +52,13 @@ function ensureSkillsDir() {
   }
 }
 
-// ─── 加载所有 Skills ─────────────────────────────────────────────────────────
+// ─── 加载所有 Skills（带缓存）────────────────────────────────────────────────
 export function loadSkills(): Skill[] {
+  const now = Date.now();
+  if (skillsCache && now - cacheTimestamp < CACHE_TTL) {
+    return skillsCache;
+  }
+
   ensureSkillsDir();
   
   const skills: Skill[] = [];
@@ -55,6 +84,8 @@ export function loadSkills(): Skill[] {
     }
   }
   
+  skillsCache = skills;
+  cacheTimestamp = now;
   return skills;
 }
 
@@ -273,11 +304,12 @@ export const skillCreateTool: ToolHandler = {
     };
 
     // 验证名称格式
-    if (!/^[a-z0-9-]+$/.test(name)) {
+    if (!validateSkillName(name)) {
       return "Error: Skill name must be lowercase with hyphens only (e.g., 'my-skill')";
     }
 
-    const skillDir = join(SKILLS_DIR, name);
+    const skillDir = getSafeSkillDir(name);
+    if (!skillDir) return "Error: Invalid skill name.";
     const jsonPath = join(skillDir, "skill.json");
     const mdPath = join(skillDir, "SKILL.md");
 
@@ -307,6 +339,7 @@ export const skillCreateTool: ToolHandler = {
     // 写入 SKILL.md
     writeFileSync(mdPath, content);
 
+    invalidateCache();
     return `Skill '${name}' created successfully~ ♡\nLocation: ${skillDir}`;
   },
 };
@@ -325,6 +358,7 @@ export const skillUpdateTool: ToolHandler = {
         properties: {
           name: { type: "string", description: "Skill name to update" },
           description: { type: "string", description: "New description" },
+          version: { type: "string", description: "New version (e.g., '1.1.0')" },
           content: { type: "string", description: "New SKILL.md content" },
           tags: { type: "array", items: { type: "string" }, description: "New tags" },
           triggers: { type: "array", items: { type: "string" }, description: "New triggers" },
@@ -334,11 +368,13 @@ export const skillUpdateTool: ToolHandler = {
   } satisfies ToolDef,
 
   async execute(args) {
-    const { name, description, content, tags, triggers } = args as {
-      name: string; description?: string; content?: string; tags?: string[]; triggers?: string[];
+    const { name, description, version, content, tags, triggers } = args as {
+      name: string; description?: string; version?: string; content?: string; tags?: string[]; triggers?: string[];
     };
 
-    const skillDir = join(SKILLS_DIR, name);
+    const skillDir = getSafeSkillDir(name);
+    if (!skillDir) return "Error: Invalid skill name. Use lowercase letters, numbers, and hyphens only.";
+
     const jsonPath = join(skillDir, "skill.json");
     const mdPath = join(skillDir, "SKILL.md");
 
@@ -348,16 +384,18 @@ export const skillUpdateTool: ToolHandler = {
 
     // 更新 skill.json
     const meta = JSON.parse(readFileSync(jsonPath, "utf8"));
-    if (description) meta.description = description;
-    if (tags) meta.tags = tags;
-    if (triggers) meta.triggers = triggers;
+    if (description !== undefined) meta.description = description;
+    if (version !== undefined) meta.version = version;
+    if (tags !== undefined) meta.tags = tags;
+    if (triggers !== undefined) meta.triggers = triggers;
     writeFileSync(jsonPath, JSON.stringify(meta, null, 2));
 
     // 更新 SKILL.md
-    if (content) {
+    if (content !== undefined) {
       writeFileSync(mdPath, content);
     }
 
+    invalidateCache();
     return `Skill '${name}' updated~ ♡`;
   },
 };
@@ -388,15 +426,13 @@ export const skillDeleteTool: ToolHandler = {
       return `Are you sure you want to delete '${name}'? Set confirm=true to proceed.`;
     }
 
-    const skillDir = join(SKILLS_DIR, name);
-    if (!existsSync(skillDir)) {
+    const skillDir = getSafeSkillDir(name);
+    if (!skillDir || !existsSync(skillDir)) {
       return `Skill '${name}' not found~`;
     }
 
-    // 删除目录
-    const { rmSync } = await import("node:fs");
     rmSync(skillDir, { recursive: true, force: true });
-
+    invalidateCache();
     return `Skill '${name}' deleted~ ♡`;
   },
 };

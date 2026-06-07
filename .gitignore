@@ -12,6 +12,7 @@ dist/
 .sakura-code-session.json
 .sakura-code-index.json
 .sakura-code-todos.json
+.sakura-code-memory.json
 
 # OS files
 .DS_Store
