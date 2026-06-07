@@ -242,3 +242,161 @@ export const skillInfoTool: ToolHandler = {
     ].join("\n");
   },
 };
+
+// ─── skill_create 工具 ────────────────────────────────────────────────────────
+export const skillCreateTool: ToolHandler = {
+  name: "skill_create",
+  schema: {
+    type: "function",
+    function: {
+      name: "skill_create",
+      description: "Create a new skill with metadata and instructions.",
+      parameters: {
+        type: "object",
+        required: ["name", "description", "content"],
+        properties: {
+          name: { type: "string", description: "Skill name (lowercase, hyphens allowed)" },
+          description: { type: "string", description: "Short description of the skill" },
+          content: { type: "string", description: "SKILL.md content (instructions for the AI)" },
+          author: { type: "string", description: "Author name (default: user)" },
+          tags: { type: "array", items: { type: "string" }, description: "Tags for categorization" },
+          triggers: { type: "array", items: { type: "string" }, description: "Trigger keywords" },
+          enabled: { type: "boolean", description: "Enable immediately (default: true)" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { name, description, content, author = "user", tags = [], triggers = [], enabled = true } = args as {
+      name: string; description: string; content: string; author?: string; tags?: string[]; triggers?: string[]; enabled?: boolean;
+    };
+
+    // 验证名称格式
+    if (!/^[a-z0-9-]+$/.test(name)) {
+      return "Error: Skill name must be lowercase with hyphens only (e.g., 'my-skill')";
+    }
+
+    const skillDir = join(SKILLS_DIR, name);
+    const jsonPath = join(skillDir, "skill.json");
+    const mdPath = join(skillDir, "SKILL.md");
+
+    // 检查是否已存在
+    if (existsSync(jsonPath)) {
+      return `Skill '${name}' already exists. Use skill_update to modify it.`;
+    }
+
+    // 创建目录
+    mkdirSync(skillDir, { recursive: true });
+
+    // 生成默认 triggers（如果未提供）
+    const finalTriggers = triggers.length > 0 ? triggers : [name, name.replace(/-/g, " ")];
+
+    // 写入 skill.json
+    const meta = {
+      name,
+      version: "1.0.0",
+      description,
+      author,
+      tags,
+      triggers: finalTriggers,
+      enabled,
+    };
+    writeFileSync(jsonPath, JSON.stringify(meta, null, 2));
+
+    // 写入 SKILL.md
+    writeFileSync(mdPath, content);
+
+    return `Skill '${name}' created successfully~ ♡\nLocation: ${skillDir}`;
+  },
+};
+
+// ─── skill_update 工具 ────────────────────────────────────────────────────────
+export const skillUpdateTool: ToolHandler = {
+  name: "skill_update",
+  schema: {
+    type: "function",
+    function: {
+      name: "skill_update",
+      description: "Update an existing skill's metadata or content.",
+      parameters: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", description: "Skill name to update" },
+          description: { type: "string", description: "New description" },
+          content: { type: "string", description: "New SKILL.md content" },
+          tags: { type: "array", items: { type: "string" }, description: "New tags" },
+          triggers: { type: "array", items: { type: "string" }, description: "New triggers" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { name, description, content, tags, triggers } = args as {
+      name: string; description?: string; content?: string; tags?: string[]; triggers?: string[];
+    };
+
+    const skillDir = join(SKILLS_DIR, name);
+    const jsonPath = join(skillDir, "skill.json");
+    const mdPath = join(skillDir, "SKILL.md");
+
+    if (!existsSync(jsonPath)) {
+      return `Skill '${name}' not found~`;
+    }
+
+    // 更新 skill.json
+    const meta = JSON.parse(readFileSync(jsonPath, "utf8"));
+    if (description) meta.description = description;
+    if (tags) meta.tags = tags;
+    if (triggers) meta.triggers = triggers;
+    writeFileSync(jsonPath, JSON.stringify(meta, null, 2));
+
+    // 更新 SKILL.md
+    if (content) {
+      writeFileSync(mdPath, content);
+    }
+
+    return `Skill '${name}' updated~ ♡`;
+  },
+};
+
+// ─── skill_delete 工具 ────────────────────────────────────────────────────────
+export const skillDeleteTool: ToolHandler = {
+  name: "skill_delete",
+  schema: {
+    type: "function",
+    function: {
+      name: "skill_delete",
+      description: "Delete a skill permanently.",
+      parameters: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", description: "Skill name to delete" },
+          confirm: { type: "boolean", description: "Confirm deletion (required)" },
+        },
+      },
+    },
+  } satisfies ToolDef,
+
+  async execute(args) {
+    const { name, confirm } = args as { name: string; confirm?: boolean };
+
+    if (!confirm) {
+      return `Are you sure you want to delete '${name}'? Set confirm=true to proceed.`;
+    }
+
+    const skillDir = join(SKILLS_DIR, name);
+    if (!existsSync(skillDir)) {
+      return `Skill '${name}' not found~`;
+    }
+
+    // 删除目录
+    const { rmSync } = await import("node:fs");
+    rmSync(skillDir, { recursive: true, force: true });
+
+    return `Skill '${name}' deleted~ ♡`;
+  },
+};
