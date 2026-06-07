@@ -41,92 +41,48 @@ export function generateDiff(
   let additions = 0;
   let deletions = 0;
   
-  // 找出变更的行范围
-  // 简单策略：找到第一个和最后一个不同的行
-  let firstDiff = -1;
-  let lastDiffOld = -1;
-  let lastDiffNew = -1;
+  // 使用简单的 LCS 算法找出公共行
+  const lcs = findLCS(oldLines, newLines);
   
-  const minLen = Math.min(oldLines.length, newLines.length);
+  let oldIdx = 0;
+  let newIdx = 0;
+  let lcsIdx = 0;
   
-  // 从前往后找第一个不同的行
-  for (let i = 0; i < minLen; i++) {
-    if (oldLines[i] !== newLines[i]) {
-      firstDiff = i;
-      break;
+  while (oldIdx < oldLines.length || newIdx < newLines.length) {
+    // 如果当前行是 LCS 的一部分，标记为 context
+    if (lcsIdx < lcs.length && oldIdx < oldLines.length && newIdx < newLines.length &&
+        oldLines[oldIdx] === lcs[lcsIdx] && newLines[newIdx] === lcs[lcsIdx]) {
+      diffLines.push({
+        type: "context",
+        content: oldLines[oldIdx],
+        oldLine: oldIdx + 1,
+        newLine: newIdx + 1,
+      });
+      oldIdx++;
+      newIdx++;
+      lcsIdx++;
+    } else {
+      // 删除的行
+      if (oldIdx < oldLines.length && (lcsIdx >= lcs.length || oldLines[oldIdx] !== lcs[lcsIdx])) {
+        diffLines.push({
+          type: "remove",
+          content: oldLines[oldIdx],
+          oldLine: oldIdx + 1,
+        });
+        deletions++;
+        oldIdx++;
+      }
+      // 新增的行
+      if (newIdx < newLines.length && (lcsIdx >= lcs.length || newLines[newIdx] !== lcs[lcsIdx])) {
+        diffLines.push({
+          type: "add",
+          content: newLines[newIdx],
+          newLine: newIdx + 1,
+        });
+        additions++;
+        newIdx++;
+      }
     }
-  }
-  
-  // 如果没有差异，返回空结果
-  if (firstDiff === -1 && oldLines.length === newLines.length) {
-    return {
-      file: filePath,
-      lines: [],
-      stats: { additions: 0, deletions: 0 },
-    };
-  }
-  
-  // 从后往前找最后一个不同的行
-  for (let i = 1; i <= minLen; i++) {
-    if (oldLines[oldLines.length - i] !== newLines[newLines.length - i]) {
-      lastDiffOld = oldLines.length - i;
-      lastDiffNew = newLines.length - i;
-      break;
-    }
-  }
-  
-  // 如果只有一个差异点
-  if (firstDiff === -1) {
-    // 文件长度不同，差异在末尾
-    firstDiff = minLen;
-    lastDiffOld = oldLines.length - 1;
-    lastDiffNew = newLines.length - 1;
-  }
-  
-  // 生成 diff 行（只包含变更部分）
-  const contextBefore = 2;
-  const contextAfter = 2;
-  
-  // 变更前的上下文
-  const startContext = Math.max(0, firstDiff - contextBefore);
-  for (let i = startContext; i < firstDiff; i++) {
-    diffLines.push({
-      type: "context",
-      content: oldLines[i],
-      oldLine: i + 1,
-      newLine: i + 1,
-    });
-  }
-  
-  // 删除的行
-  for (let i = firstDiff; i <= lastDiffOld; i++) {
-    diffLines.push({
-      type: "remove",
-      content: oldLines[i],
-      oldLine: i + 1,
-    });
-    deletions++;
-  }
-  
-  // 新增的行
-  for (let i = firstDiff; i <= lastDiffNew; i++) {
-    diffLines.push({
-      type: "add",
-      content: newLines[i],
-      newLine: i + 1,
-    });
-    additions++;
-  }
-  
-  // 变更后的上下文
-  const endContext = Math.min(oldLines.length, lastDiffOld + contextAfter + 1);
-  for (let i = lastDiffOld + 1; i < endContext; i++) {
-    diffLines.push({
-      type: "context",
-      content: oldLines[i],
-      oldLine: i + 1,
-      newLine: i + 1,
-    });
   }
   
   return {
@@ -134,6 +90,40 @@ export function generateDiff(
     lines: diffLines,
     stats: { additions, deletions },
   };
+}
+
+// ─── 最长公共子序列 ────────────────────────────────────────────────────────────
+function findLCS(a: string[], b: string[]): string[] {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  
+  // 回溯找出 LCS
+  const result: string[] = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) {
+      result.unshift(a[i - 1]);
+      i--;
+      j--;
+    } else if (dp[i - 1][j] > dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  
+  return result;
 }
 
 // ─── 格式化 Diff 输出 ────────────────────────────────────────────────────────
