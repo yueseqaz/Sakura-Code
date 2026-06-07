@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { ConfigManager } from "./config.js";
 import { firstTimeSetup, interactiveConfig } from "./interactive-config.js";
+import { interactiveContext } from "./interactive-context.js";
 import { Agent } from "./agent/agent.js";
 import { Context } from "./agent/context.js";
 import { cleanTempMemories } from "./tools/memory.js";
@@ -145,7 +146,7 @@ program
           const contextManager = agent.getContextManager();
           const parts = input.trim().split(/\s+/);
           
-          // /context set <size>
+          // /context set <size> (quick set without menu)
           if (parts[1] === "set" && parts[2]) {
             const sizeStr = parts[2].toLowerCase();
             let maxTokens: number;
@@ -167,25 +168,10 @@ program
             continue;
           }
           
-          // /context clear
-          if (parts[1] === "clear") {
-            Object.assign(ctx, new Context());
-            console.log("\x1b[32m✓ Context cleared\x1b[0m\n");
-            continue;
-          }
-          
-          // /context (显示子菜单)
-          const status = await contextManager.getStatus(ctx.messages);
-          const model = contextManager.getModel();
-          
-          console.log(`
-\x1b[1m📊 Context:\x1b[0m`);
-          console.log(`  ${status.formatted}`);
-          if (model) console.log(`  \x1b[90mModel: ${model}\x1b[0m`);
-          console.log(`  \x1b[90mMessages: ${ctx.messages.length}\x1b[0m`);
-          console.log(`
-\x1b[90m  /context set <size> — Set max (e.g., 128k, 1m)
-  /context clear      — Clear context\x1b[0m\n`);
+          // /context (交互式菜单)
+          rl.close();
+          await interactiveContext(contextManager, ctx);
+          recreateReadline();
           continue;
         }
 
