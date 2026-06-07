@@ -158,6 +158,11 @@ export class ContextManager {
     return this.config.model;
   }
 
+  // ─── 设置 maxTokens ─────────────────────────────────────────────────────────
+  setMaxTokens(maxTokens: number): void {
+    this.config.maxTokens = maxTokens;
+  }
+
   // ─── Token 计数 ──────────────────────────────────────────────────────────
   async countTokens(messages: ChatMsg[]): Promise<number> {
     // 优先使用 API 返回的 usage

@@ -98,7 +98,8 @@ program
       const ask = (q: string) => new Promise<string>((r) => rl.question(q, r));
 
       console.log("🌸 Sakura Code — AI Coding Agent  (Ctrl+C or 'exit' to quit)\n");
-      console.log("   Type /config for configuration\n");
+      console.log("   Type /config for configuration");
+      console.log("   Type /context to view/set context window\n");
 
       while (true) {
         const input = prompt ?? (await ask("\x1b[1;32m❯\x1b[0m "));
@@ -135,16 +136,44 @@ program
   /clear    — Clear context
   /save     — Save session
   /context  — Show context usage
+  /context set <size> — Set max context (e.g., /context set 128k)
   /help     — Show this help
   exit      — Exit
 `);
           continue;
         }
-        if (input.trim() === "/context") {
+        if (input.trim().startsWith("/context")) {
           const contextManager = agent.getContextManager();
+          const parts = input.trim().split(/\s+/);
+          
+          // /context set <size>
+          if (parts[1] === "set" && parts[2]) {
+            const sizeStr = parts[2].toLowerCase();
+            let maxTokens: number;
+            
+            if (sizeStr.endsWith("k")) {
+              maxTokens = parseFloat(sizeStr) * 1000;
+            } else if (sizeStr.endsWith("m")) {
+              maxTokens = parseFloat(sizeStr) * 1000000;
+            } else {
+              maxTokens = parseInt(sizeStr);
+            }
+            
+            if (isNaN(maxTokens) || maxTokens <= 0) {
+              console.log("\x1b[31m✗ Invalid size. Use format: 128k, 1m, or 128000\x1b[0m\n");
+            } else {
+              contextManager.setMaxTokens(maxTokens);
+              console.log(`\x1b[32m✓ Context window set to ${sizeStr}\x1b[0m\n`);
+            }
+            continue;
+          }
+          
+          // /context (显示状态)
           const status = await contextManager.getStatus(ctx.messages);
+          const model = contextManager.getModel();
           console.log(`\n\x1b[1mContext Usage:\x1b[0m`);
           console.log(status.formatted);
+          if (model) console.log(`\x1b[90mModel: ${model}\x1b[0m`);
           console.log(`\x1b[90mMessages: ${ctx.messages.length}\x1b[0m\n`);
           continue;
         }
