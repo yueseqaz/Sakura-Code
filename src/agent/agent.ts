@@ -10,6 +10,22 @@ const MAX_ITERATIONS = 50;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 
+// ─── Diff 颜色化 ─────────────────────────────────────────────────────────────
+function colorizeDiff(diff: string): string {
+  return diff.split("\n").map(line => {
+    if (line.startsWith("+")) {
+      return `\x1b[32m${line}\x1b[0m`;  // 绿色
+    }
+    if (line.startsWith("-")) {
+      return `\x1b[31m${line}\x1b[0m`;  // 红色
+    }
+    if (line.startsWith("📄") || line.startsWith("─")) {
+      return `\x1b[1m\x1b[36m${line}\x1b[0m`;  // 粗体青色
+    }
+    return line;
+  }).join("\n");
+}
+
 // ─── Token Usage Tracking ────────────────────────────────────────────────────
 export interface TokenUsage {
   promptTokens: number;
@@ -363,11 +379,13 @@ export class Agent {
           content = `Error: ${(err as Error).message}`;
         }
 
-        // 如果是文件编辑工具，直接显示 diff（不依赖 AI）
+        // 如果是文件编辑工具，直接显示 diff（带颜色）
         if (name === "edit_file" || name === "write_file") {
           const diffMatch = content.match(/(📄[\s\S]*?────────────────────────────────────[\s\S]*?)(?=\n✅|$)/);
           if (diffMatch) {
-            process.stdout.write("\n" + diffMatch[1] + "\n");
+            // 添加颜色后直接输出
+            const coloredDiff = colorizeDiff(diffMatch[1]);
+            process.stdout.write("\n" + coloredDiff + "\n\n");
           }
         }
 
