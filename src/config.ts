@@ -185,4 +185,43 @@ export class ConfigManager {
 
     return lines.join("\n");
   }
+
+  // ─── Validate API Key ────────────────────────────────────────────────────
+  async validateApiKey(providerName?: string): Promise<{ valid: boolean; error?: string; model?: string }> {
+    const provider = this.getProvider(providerName);
+    if (!provider) {
+      return { valid: false, error: `Provider '${providerName ?? this.config.defaultProvider}' not found` };
+    }
+    if (!provider.apiKey) {
+      return { valid: false, error: "API key not set" };
+    }
+
+    // Try a minimal API call to validate the key
+    try {
+      const response = await fetch(`${provider.baseURL}/models`, {
+        headers: {
+          "Authorization": `Bearer ${provider.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        return { valid: false, error: "Invalid API key" };
+      }
+
+      if (!response.ok) {
+        return { valid: false, error: `API returned status ${response.status}` };
+      }
+
+      const data = await response.json() as any;
+      const models = data.data?.map((m: any) => m.id) || [];
+      return { valid: true, model: this.config.defaultModel };
+    } catch (err: any) {
+      if (err.name === "TimeoutError") {
+        return { valid: false, error: "Connection timeout" };
+      }
+      return { valid: false, error: `Connection failed: ${err.message}` };
+    }
+  }
 }

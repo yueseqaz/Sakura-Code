@@ -18,6 +18,11 @@ program
   .description("Sakura Code - A cute AI coding agent with yandere personality ✨")
   .version("0.1.0");
 
+// ─── Format token count ──────────────────────────────────────────────────────
+function fmtTokens(n: number): string {
+  return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+}
+
 // ─── Main command (REPL or single prompt) ────────────────────────────────────
 program
   .argument("[prompt]", "Prompt to run")
@@ -50,6 +55,15 @@ program
       const { apiKey, baseURL, model: defaultModel } = configManager.resolveForAgent();
       const model = opts.model ?? defaultModel;
 
+      // Validate API key on startup
+      const validation = await configManager.validateApiKey();
+      if (!validation.valid) {
+        console.error("\x1b[31m✗ API key validation failed: " + validation.error + "\x1b[0m");
+        console.error("\x1b[90mRun 'sakura-code config' to fix your configuration\x1b[0m");
+        process.exit(1);
+      }
+      console.log("\x1b[32m✓ Connected to " + configManager.get().defaultProvider + "\x1b[0m\n");
+
       const ctx = opts.continue ? Context.load(SESSION_FILE) : new Context();
       const agent = new Agent({ apiKey, baseURL, model });
 
@@ -57,6 +71,12 @@ program
         if (!prompt) throw new Error("Missing prompt: sakura-code -p <prompt>");
         await agent.run(ctx, prompt);
         ctx.save(SESSION_FILE);
+        
+        // Show token usage
+        const usage = agent.getTokenUsage();
+        if (usage.requestCount > 0) {
+          console.log("\x1b[90m\n  ↑" + fmtTokens(usage.promptTokens) + " ↓" + fmtTokens(usage.completionTokens) + " | " + usage.requestCount + " requests\x1b[0m");
+        }
         return;
       }
 
@@ -115,11 +135,17 @@ program
 
         await agent.run(ctx, input);
         ctx.save(SESSION_FILE);
+        
+        // Show token usage
+        const usage = agent.getTokenUsage();
+        if (usage.requestCount > 0) {
+          console.log("\x1b[90m  ↑" + fmtTokens(usage.promptTokens) + " ↓" + fmtTokens(usage.completionTokens) + " | " + usage.requestCount + " requests\x1b[0m\n");
+        }
       }
 
       rl.close();
     } catch (err) {
-      console.error(`\x1b[31m✗ ${(err as Error).message}\x1b[0m`);
+      console.error("\x1b[31m✗ " + (err as Error).message + "\x1b[0m");
       process.exit(1);
     }
   });

@@ -4,13 +4,26 @@ import { Registry } from "../tools/registry.js";
 import { logger } from "../utils/logger.js";
 import type { AgentConfig, ChatMsg } from "../types.js";
 
-const MAX_ITERATIONS = 50; // safety ceiling
+const MAX_ITERATIONS = 50;
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+// ─── Token Usage Tracking ────────────────────────────────────────────────────
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  requestCount: number;
+}
 
 export class Agent {
   private client: OpenAI;
   private model: string;
   private registry: Registry;
   private maxIterations: number;
+  private tokenUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, requestCount: 0 };
+  private aborted: boolean = false;
+  private currentAbortController: AbortController | null = null;
 
   constructor(config: AgentConfig = {}) {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
@@ -25,43 +38,101 @@ export class Agent {
     this.maxIterations = config.maxIterations ?? MAX_ITERATIONS;
     this.registry = new Registry();
 
-    // Load any MCP servers
+    // Load MCP servers
     if (config.mcpServers?.length) {
       Promise.all(config.mcpServers.map((s) => this.registry.loadMCP(s)));
     }
+
+    // Setup Ctrl+C handler
+    this.setupSignalHandlers();
   }
 
-  /**
-   * Main Agent Loop with Streaming
-   *
-   * Claude Code-style workflow:
-   *   1. User message → LLM (streaming)
-   *   2. LLM responds with text and/or tool_calls
-   *   3. Execute tool_calls in parallel
-   *   4. Feed tool results back to LLM
-   *   5. Repeat until LLM stops calling tools
-   *   6. Return final text response
-   */
+  // ─── Signal Handlers (Ctrl+C) ──────────────────────────────────────────────
+  private setupSignalHandlers(): void {
+    process.on("SIGINT", () => {
+      if (this.currentAbortController) {
+        this.aborted = true;
+        this.currentAbortController.abort();
+        logger.info("Interrupted! Finishing current output...");
+      } else {
+        process.exit(0);
+      }
+    });
+  }
+
+  // ─── Retry with Exponential Backoff ────────────────────────────────────────
+  private async withRetry<T>(
+    fn: () => Promise<T>,
+    label: string = "API call"
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        lastError = err;
+
+        // Don't retry on non-retryable errors
+        if (err.status === 401 || err.status === 403) {
+          throw new Error(`Authentication failed: ${err.message}`);
+        }
+        if (err.status === 400) {
+          throw new Error(`Bad request: ${err.message}`);
+        }
+
+        // Don't retry if aborted
+        if (this.aborted) {
+          throw new Error("Operation aborted by user");
+        }
+
+        if (attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
+          logger.info(`${label} failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${Math.round(delay / 1000)}s...`);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error(`${label} failed after ${MAX_RETRIES + 1} attempts`);
+  }
+
+  // ─── Main Agent Loop ──────────────────────────────────────────────────────
   async run(ctx: Context, userInput: string): Promise<void> {
     ctx.push({ role: "user", content: userInput });
+    this.aborted = false;
 
     let iterations = 0;
 
-    while (iterations < this.maxIterations) {
+    while (iterations < this.maxIterations && !this.aborted) {
       iterations++;
 
-      // ── Show thinking status ─────────────────────────────────────────────
+      // Show thinking status
       logger.thinking();
 
-      // ── Call LLM with Streaming ──────────────────────────────────────────
-      const stream = await this.client.chat.completions.create({
-        model: this.model,
-        messages: ctx.messages,
-        tools: this.registry.schemas(),
-        tool_choice: "auto",
-        parallel_tool_calls: true,
-        stream: true,
-      });
+      // Create abort controller for this request
+      this.currentAbortController = new AbortController();
+
+      // ── Call LLM with Retry ──────────────────────────────────────────────
+      let stream: AsyncIterable<any>;
+      try {
+        stream = await this.withRetry(
+          () => this.client.chat.completions.create({
+            model: this.model,
+            messages: ctx.messages,
+            tools: this.registry.schemas(),
+            tool_choice: "auto",
+            parallel_tool_calls: true,
+            stream: true,
+            stream_options: { include_usage: true },
+          }, { signal: this.currentAbortController!.signal }),
+          "Chat completion"
+        );
+      } catch (err: any) {
+        logger.stopLoading();
+        logger.error(err.message);
+        break;
+      }
 
       // Accumulate streaming response
       let content = "";
@@ -69,49 +140,83 @@ export class Agent {
       let hasContent = false;
       let thinkingStopped = false;
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta;
-        if (!delta) continue;
+      try {
+        for await (const chunk of stream) {
+          // Check if aborted
+          if (this.aborted) break;
 
-        // Handle text content (stream to terminal)
-        if (delta.content) {
-          // Stop thinking animation when first content arrives
-          if (!thinkingStopped) {
-            thinkingStopped = true;
-            logger.stopLoading();
+          // Extract usage from chunk
+          if (chunk.usage) {
+            this.tokenUsage.promptTokens += chunk.usage.prompt_tokens || 0;
+            this.tokenUsage.completionTokens += chunk.usage.completion_tokens || 0;
+            this.tokenUsage.totalTokens += chunk.usage.total_tokens || 0;
+            this.tokenUsage.requestCount++;
           }
-          
-          if (!hasContent) {
-            hasContent = true;
-            process.stdout.write("\n");
-          }
-          content += delta.content;
-          process.stdout.write(delta.content);
-        }
 
-        // Handle tool calls (accumulate)
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const index = tc.index ?? 0;
-            if (!toolCalls.has(index)) {
-              toolCalls.set(index, { id: "", name: "", arguments: "" });
+          const delta = chunk.choices[0]?.delta;
+          if (!delta) continue;
+
+          // Handle text content
+          if (delta.content) {
+            if (!thinkingStopped) {
+              thinkingStopped = true;
+              logger.stopLoading();
             }
-            const existing = toolCalls.get(index)!;
-            if (tc.id) existing.id = tc.id;
-            if (tc.function?.name) existing.name = tc.function.name;
-            if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+            if (!hasContent) {
+              hasContent = true;
+              process.stdout.write("\n");
+            }
+            content += delta.content;
+            process.stdout.write(delta.content);
           }
+
+          // Handle tool calls
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const index = tc.index ?? 0;
+              if (!toolCalls.has(index)) {
+                toolCalls.set(index, { id: "", name: "", arguments: "" });
+              }
+              const existing = toolCalls.get(index)!;
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.name = tc.function.name;
+              if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+            }
+          }
+        }
+      } catch (err: any) {
+        if (this.aborted) {
+          logger.info("Stream interrupted by user");
+        } else {
+          logger.error(`Stream error: ${err.message}`);
         }
       }
 
-      // Ensure thinking is stopped
+      // If API didn't return usage, estimate from content
+      if (this.tokenUsage.requestCount === 0 || !stream) {
+        // Simple estimation: ~4 chars per token
+        const estimatedPrompt = Math.ceil(JSON.stringify(ctx.messages).length / 4);
+        const estimatedCompletion = Math.ceil(content.length / 4);
+        this.tokenUsage.promptTokens += estimatedPrompt;
+        this.tokenUsage.completionTokens += estimatedCompletion;
+        this.tokenUsage.totalTokens += estimatedPrompt + estimatedCompletion;
+        this.tokenUsage.requestCount++;
+      }
+
+      // Cleanup
+      this.currentAbortController = null;
       if (!thinkingStopped) {
         thinkingStopped = true;
         logger.stopLoading();
       }
-
       if (hasContent) {
         process.stdout.write("\n");
+      }
+
+      // If aborted, break the loop
+      if (this.aborted) {
+        logger.info("Operation cancelled");
+        break;
       }
 
       // Build assistant message
@@ -120,7 +225,6 @@ export class Agent {
         content: content || null,
       };
 
-      // Add tool calls if any
       if (toolCalls.size > 0) {
         (assistantMsg as any).tool_calls = Array.from(toolCalls.entries()).map(([_, tc]) => ({
           id: tc.id,
@@ -131,13 +235,11 @@ export class Agent {
 
       ctx.push(assistantMsg);
 
-      // ── No tool calls → done ──────────────────────────────────────────────
+      // No tool calls → done
       if (toolCalls.size === 0) break;
 
-      // ── Show working status immediately ──────────────────────────────────
+      // Execute tools
       logger.working();
-
-      // ── Execute tools (in parallel) ───────────────────────────────────────
       const toolResults = await this.executeTools(
         Array.from(toolCalls.entries()).map(([_, tc]) => ({
           id: tc.id,
@@ -148,7 +250,6 @@ export class Agent {
       ctx.push(...toolResults);
     }
 
-    // ── Stop any remaining loading animation ──────────────────────────────
     logger.stopLoading();
 
     if (iterations >= this.maxIterations) {
@@ -160,7 +261,6 @@ export class Agent {
   private async executeTools(
     toolCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[]
   ): Promise<ChatMsg[]> {
-    // Execute all tool calls in parallel
     const results = await Promise.all(
       toolCalls.map(async (call): Promise<ChatMsg> => {
         const { name, arguments: argsJson } = call.function;
@@ -187,8 +287,16 @@ export class Agent {
     return results;
   }
 
-  // ─── Registry Access (for external inspection / testing) ───────────────────
+  // ─── Public Accessors ──────────────────────────────────────────────────────
   getRegistry(): Registry {
     return this.registry;
+  }
+
+  getTokenUsage(): TokenUsage {
+    return { ...this.tokenUsage };
+  }
+
+  resetTokenUsage(): void {
+    this.tokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, requestCount: 0 };
   }
 }
