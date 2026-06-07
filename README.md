@@ -17,6 +17,7 @@ User → LLM → Tool Dispatch → Parallel Execution → Streaming Results → 
 - **Session Persistence** — Continue conversations across sessions
 - **Long-term Memory** — Remember user preferences across sessions
 - **Security First** — Path guards, command blocklist, file size limits
+- **Sub-agent System** — Spawn independent child agents for parallel task execution
 
 ## 🚀 Quick Start
 
@@ -125,6 +126,22 @@ sakura-code
 | `memory_list` | List all memories |
 | `memory_delete` | Delete a memory |
 
+### Phase 9 — Sub-agent
+
+| Tool | Description |
+|------|-------------|
+| `subagent_spawn` | Create an independent child agent for parallel task execution |
+| `subagent_status` | Check the status and progress of a sub-agent |
+| `subagent_list` | List all sub-agents and their status |
+| `subagent_result` | Get the result of a completed sub-agent |
+| `subagent_cancel` | Cancel a running sub-agent |
+
+**Sub-agent Features:**
+- Independent context window — sub-agent internal tool calls won't bloat main agent's context
+- Parallel execution — spawn multiple sub-agents for concurrent tasks
+- Isolated token consumption — only final results are returned to main agent
+- Status monitoring — track progress of running sub-agents
+
 ## 📁 Project Structure
 
 ```
@@ -136,7 +153,8 @@ Sakura-Code/
 │   │
 │   ├── agent/
 │   │   ├── agent.ts          # Core agent loop (LLM ↔ tool dispatch, streaming)
-│   │   └── context.ts        # Session memory (persisted to JSON)
+│   │   ├── context.ts        # Session memory (persisted to JSON)
+│   │   └── subagent-manager.ts # Sub-agent lifecycle management
 │   │
 │   ├── tools/
 │   │   ├── registry.ts       # Tool registry — aggregates all tools
@@ -149,7 +167,8 @@ Sakura-Code/
 │   │   ├── todo.ts           # todo_write, todo_read
 │   │   ├── docker.ts         # Docker management tools
 │   │   ├── database.ts       # SQLite, MySQL, PostgreSQL queries
-│   │   └── memory.ts         # Long-term memory system
+│   │   ├── memory.ts         # Long-term memory system
+│   │   └── subagent.ts       # Sub-agent tools (spawn, status, result, etc.)
 │   │
 │   ├── utils/
 │   │   ├── logger.ts         # Colored terminal output with loading animations
@@ -272,6 +291,7 @@ MCP servers must expose:
 - [x] Database tools (SQLite, MySQL, PostgreSQL)
 - [x] Long-term memory system
 - [x] Cute loading animations
+- [x] Multi-agent orchestration (subagents)
 - [ ] True semantic search with embeddings (OpenAI embeddings API)
 - [ ] MCP server discovery & hot reload
 - [ ] Multi-agent orchestration (subagents)
