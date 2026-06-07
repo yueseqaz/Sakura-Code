@@ -43,6 +43,10 @@ export interface AgentConfig {
   maxIterations?: number;
   workdir?: string;
   mcpServers?: MCPAdapter[];
+  provider?: string;       // Provider name
+  contextWindow?: number;  // Model context window size
+  tier?: string;           // Model tier
+  compressThreshold?: number; // Context compression threshold (0-1)
 }
 
 // ─── Security ─────────────────────────────────────────────────────────────────

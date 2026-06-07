@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Context } from "./context.js";
 import { Registry } from "../tools/registry.js";
 import { logger } from "../utils/logger.js";
+import { ContextManager } from "../utils/context-manager.js";
 import type { AgentConfig, ChatMsg } from "../types.js";
 
 const MAX_ITERATIONS = 50;
@@ -24,6 +25,7 @@ export class Agent {
   private tokenUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, requestCount: 0 };
   private aborted: boolean = false;
   private currentAbortController: AbortController | null = null;
+  private contextManager: ContextManager;
 
   constructor(config: AgentConfig = {}) {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
@@ -37,6 +39,12 @@ export class Agent {
     this.model = model;
     this.maxIterations = config.maxIterations ?? MAX_ITERATIONS;
     this.registry = new Registry();
+
+    // 初始化 context manager
+    this.contextManager = new ContextManager({
+      maxTokens: config.contextWindow || 128000,
+      provider: config.provider,
+    });
 
     // Load MCP servers
     if (config.mcpServers?.length) {
@@ -110,6 +118,15 @@ export class Agent {
     while (iterations < this.maxIterations && !this.aborted) {
       iterations++;
 
+      // ── Context 压缩检查 ──────────────────────────────────────────────
+      const { messages: compressed, compressed: didCompress, level } = 
+        await this.contextManager.compress(ctx.messages);
+      
+      if (didCompress) {
+        ctx.messages = compressed;
+        logger.info(`Context compressed (level ${level}), token usage reduced~`);
+      }
+
       // Show thinking status
       logger.thinking();
 
@@ -150,10 +167,18 @@ export class Agent {
 
           // Extract usage from chunk
           if (chunk.usage) {
-            this.tokenUsage.promptTokens += chunk.usage.prompt_tokens || 0;
-            this.tokenUsage.completionTokens += chunk.usage.completion_tokens || 0;
-            this.tokenUsage.totalTokens += chunk.usage.total_tokens || 0;
+            const u = chunk.usage;
+            this.tokenUsage.promptTokens += u.prompt_tokens || 0;
+            this.tokenUsage.completionTokens += u.completion_tokens || 0;
+            this.tokenUsage.totalTokens += u.total_tokens || 0;
             this.tokenUsage.requestCount++;
+            
+            // 更新 context manager
+            this.contextManager.updateUsage(
+              u.prompt_tokens || 0,
+              u.completion_tokens || 0,
+              u.total_tokens || 0
+            );
           }
 
           const delta = chunk.choices[0]?.delta;
