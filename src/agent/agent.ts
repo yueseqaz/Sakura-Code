@@ -29,6 +29,8 @@ export class Agent {
   private contextManager: ContextManager;
   private subagentManager: SubagentManager;
   private progressCallback: ((progress: string) => void) | null = null;
+  private silent: boolean = false; // 静默模式
+  private outputBuffer: string[] = []; // 输出缓冲区（静默模式用）
 
   constructor(config: AgentConfig = {}) {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
@@ -69,6 +71,29 @@ export class Agent {
   // ─── 设置进度回调 ──────────────────────────────────────────────────────────
   setProgressCallback(callback: (progress: string) => void) {
     this.progressCallback = callback;
+  }
+
+  // ─── 设置静默模式 ──────────────────────────────────────────────────────────
+  setSilent(silent: boolean) {
+    this.silent = silent;
+  }
+
+  // ─── 输出方法（支持静默模式）──────────────────────────────────────────────
+  private output(text: string) {
+    if (this.silent) {
+      this.outputBuffer.push(text);
+    } else {
+      process.stdout.write(text);
+    }
+  }
+
+  // ─── 获取输出缓冲区 ────────────────────────────────────────────────────────
+  getOutputBuffer(): string {
+    return this.outputBuffer.join("");
+  }
+
+  clearOutputBuffer() {
+    this.outputBuffer = [];
   }
 
   // ─── Signal Handlers (Ctrl+C) ──────────────────────────────────────────────
@@ -113,6 +138,7 @@ export class Agent {
         if (attempt < MAX_RETRIES) {
           const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
           logger.info(`${label} failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${Math.round(delay / 1000)}s...`);
+          this.progressCallback?.(`Retrying ${label} (attempt ${attempt + 2})...`);
           await new Promise((r) => setTimeout(r, delay));
         }
       }
@@ -124,6 +150,7 @@ export class Agent {
   // ─── Main Agent Loop ──────────────────────────────────────────────────────
   async run(ctx: Context, userInput: string): Promise<void> {
     // 初始化 context manager（从 API 获取 context window）
+    this.progressCallback?.("Initializing context manager...");
     await this.contextManager.init();
     
     // 匹配并加载 Skill
@@ -136,6 +163,9 @@ export class Agent {
 
     while (iterations < this.maxIterations && !this.aborted) {
       iterations++;
+
+      // ── 更新心跳 ──────────────────────────────────────────────────────
+      this.progressCallback?.(`Iteration ${iterations}/${this.maxIterations}...`);
 
       // ── Context 压缩检查 ──────────────────────────────────────────────
       const { messages: compressed, compressed: didCompress, level } = 
@@ -153,6 +183,7 @@ export class Agent {
       this.currentAbortController = new AbortController();
 
       // ── Call LLM with Retry ──────────────────────────────────────────────
+      this.progressCallback?.(`Calling LLM (iteration ${iterations})...`);
       let stream: AsyncIterable<any>;
       try {
         stream = await this.withRetry(
@@ -184,6 +215,9 @@ export class Agent {
           // Check if aborted
           if (this.aborted) break;
 
+          // 定期更新心跳（每收到一个 chunk 都算活跃）
+          this.progressCallback?.(`Streaming response...`);
+
           // Extract usage from chunk
           if (chunk.usage) {
             const u = chunk.usage;
@@ -211,10 +245,10 @@ export class Agent {
             }
             if (!hasContent) {
               hasContent = true;
-              process.stdout.write("\n");
+              this.output("\n");
             }
             content += delta.content;
-            process.stdout.write(delta.content);
+            this.output(delta.content);
           }
 
           // Handle tool calls
@@ -257,7 +291,7 @@ export class Agent {
         logger.stopLoading();
       }
       if (hasContent) {
-        process.stdout.write("\n");
+        this.output("\n");
       }
 
       // If aborted, break the loop
@@ -287,6 +321,7 @@ export class Agent {
 
       // Execute tools
       logger.working();
+      this.progressCallback?.(`Executing ${toolCalls.size} tool(s)...`);
       const toolResults = await this.executeTools(
         Array.from(toolCalls.entries()).map(([_, tc]) => ({
           id: tc.id,
@@ -295,6 +330,9 @@ export class Agent {
         }))
       );
       ctx.push(...toolResults);
+
+      // ── 工具执行完成，更新心跳 ────────────────────────────────────────
+      this.progressCallback?.(`Completed iteration ${iterations}`);
     }
 
     logger.stopLoading();
@@ -341,6 +379,19 @@ export class Agent {
 
   getTokenUsage(): TokenUsage {
     return { ...this.tokenUsage };
+  }
+
+  // ─── 获取总 Token 用量（主 Agent + 子代理）──────────────────────────────────
+  getGrandTotalTokens(): { main: TokenUsage; subagent: TokenUsage; grand: TokenUsage } {
+    const main = { ...this.tokenUsage };
+    const subagent = this.subagentManager.getTotalSubagentTokens();
+    const grand: TokenUsage = {
+      promptTokens: main.promptTokens + subagent.promptTokens,
+      completionTokens: main.completionTokens + subagent.completionTokens,
+      totalTokens: main.totalTokens + subagent.totalTokens,
+      requestCount: main.requestCount + subagent.requestCount,
+    };
+    return { main, subagent, grand };
   }
 
   resetTokenUsage(): void {

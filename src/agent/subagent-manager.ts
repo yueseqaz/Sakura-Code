@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Agent } from "./agent.js";
 import { Context } from "./context.js";
 import type { AgentConfig } from "../types.js";
+import { logger } from "../utils/logger.js";
 
 // ─── 子代理状态 ──────────────────────────────────────────────────────────────
 export type SubagentStatus = "pending" | "running" | "completed" | "failed" | "timeout";
@@ -103,6 +104,9 @@ export class SubagentManager {
     try {
       const ctx = new Context();
 
+      // 设置静默模式（不输出到 stdout）
+      agent.setSilent(true);
+
       // 设置进度回调
       agent.setProgressCallback((progress: string) => {
         info.progress = progress;
@@ -200,6 +204,25 @@ export class SubagentManager {
         this.agents.delete(id);
       }
     }
+  }
+
+  // ─── 获取所有子代理的总 Token 用量 ──────────────────────────────────────────
+  getTotalSubagentTokens(): { promptTokens: number; completionTokens: number; totalTokens: number; requestCount: number } {
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    let requestCount = 0;
+
+    for (const info of this.agents.values()) {
+      if (info.tokenUsage) {
+        promptTokens += info.tokenUsage.prompt;
+        completionTokens += info.tokenUsage.completion;
+        totalTokens += info.tokenUsage.total;
+        requestCount++;  // 每个子代理算一次请求
+      }
+    }
+
+    return { promptTokens, completionTokens, totalTokens, requestCount };
   }
 
   // ─── 获取摘要 ──────────────────────────────────────────────────────────────

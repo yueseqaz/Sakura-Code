@@ -81,9 +81,17 @@ program
         ctx.save(SESSION_FILE);
         
         // Show token usage
-        const usage = agent.getTokenUsage();
-        if (usage.requestCount > 0) {
-          console.log("\x1b[90m\n  ↑" + fmtTokens(usage.promptTokens) + " ↓" + fmtTokens(usage.completionTokens) + " | " + usage.requestCount + " requests\x1b[0m");
+        const { main, subagent, grand } = agent.getGrandTotalTokens();
+        if (grand.requestCount > 0) {
+          if (subagent.totalTokens > 0) {
+            // 有子代理消耗时，展示分项
+            console.log("\x1b[90m\n  Main: ↑" + fmtTokens(main.promptTokens) + " ↓" + fmtTokens(main.completionTokens) +
+              " | Subagent: ↑" + fmtTokens(subagent.promptTokens) + " ↓" + fmtTokens(subagent.completionTokens) +
+              " | Total: ↑" + fmtTokens(grand.promptTokens) + " ↓" + fmtTokens(grand.completionTokens) +
+              " | " + grand.requestCount + " requests\x1b[0m");
+          } else {
+            console.log("\x1b[90m\n  ↑" + fmtTokens(grand.promptTokens) + " ↓" + fmtTokens(grand.completionTokens) + " | " + grand.requestCount + " requests\x1b[0m");
+          }
         }
         return;
       }
@@ -180,9 +188,17 @@ program
         ctx.save(SESSION_FILE);
         
         // Show token usage
-        const usage = agent.getTokenUsage();
-        if (usage.requestCount > 0) {
-          console.log("\x1b[90m  ↑" + fmtTokens(usage.promptTokens) + " ↓" + fmtTokens(usage.completionTokens) + " | " + usage.requestCount + " requests\x1b[0m\n");
+        const { main, subagent, grand } = agent.getGrandTotalTokens();
+        if (grand.requestCount > 0) {
+          if (subagent.totalTokens > 0) {
+            // 有子代理消耗时，展示分项
+            console.log("\x1b[90m  Main: ↑" + fmtTokens(main.promptTokens) + " ↓" + fmtTokens(main.completionTokens) +
+              " | Subagent: ↑" + fmtTokens(subagent.promptTokens) + " ↓" + fmtTokens(subagent.completionTokens) +
+              " | Total: ↑" + fmtTokens(grand.promptTokens) + " ↓" + fmtTokens(grand.completionTokens) +
+              " | " + grand.requestCount + " requests\x1b[0m\n");
+          } else {
+            console.log("\x1b[90m  ↑" + fmtTokens(grand.promptTokens) + " ↓" + fmtTokens(grand.completionTokens) + " | " + grand.requestCount + " requests\x1b[0m\n");
+          }
         }
       }
 
