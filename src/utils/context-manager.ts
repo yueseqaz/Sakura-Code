@@ -1,3 +1,6 @@
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { ChatMsg } from "../types.js";
 import type { ToolHandler, ToolDef } from "../types.js";
 
@@ -125,6 +128,8 @@ export class ContextManager {
 
   constructor(config: Partial<ContextConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    // 加载保存的配置
+    this.loadConfig();
   }
 
   // ─── 异步初始化（从 API 获取 context window）────────────────────────────
@@ -161,6 +166,40 @@ export class ContextManager {
   // ─── 设置 maxTokens ─────────────────────────────────────────────────────────
   setMaxTokens(maxTokens: number): void {
     this.config.maxTokens = maxTokens;
+    // 持久化到配置文件
+    this.saveConfig();
+  }
+
+  // ─── 持久化配置 ─────────────────────────────────────────────────────────────
+  private saveConfig(): void {
+    try {
+      const configPath = join(homedir(), ".sakura-code", "context.json");
+      const dir = join(homedir(), ".sakura-code");
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(configPath, JSON.stringify({
+        maxTokens: this.config.maxTokens,
+        model: this.config.model,
+      }, null, 2));
+    } catch {
+      // 静默失败
+    }
+  }
+
+  // ─── 加载配置 ───────────────────────────────────────────────────────────────
+  private loadConfig(): void {
+    try {
+      const configPath = join(homedir(), ".sakura-code", "context.json");
+      if (existsSync(configPath)) {
+        const saved = JSON.parse(readFileSync(configPath, "utf8"));
+        if (saved.maxTokens) {
+          this.config.maxTokens = saved.maxTokens;
+        }
+      }
+    } catch {
+      // 静默失败
+    }
   }
 
   // ─── Token 计数 ──────────────────────────────────────────────────────────
