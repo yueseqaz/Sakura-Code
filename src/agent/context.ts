@@ -67,9 +67,18 @@ Docker Tools (you have these to manage containers~):
 - docker_volume: Manage volumes
 - docker_network: Manage networks
 
+SSH Tools (for remote server operations~):
+- ssh_exec: Execute command on remote server via SSH (key-based auth)
+- ssh_upload: Upload file to remote server via SCP (key-based auth)
+- ssh_download: Download file from remote server via SCP (key-based auth)
+- ssh_list: List SSH hosts from ~/.ssh/config
+- sshpass_exec: Execute command on remote server via SSH with password auth
+- sshpass_upload: Upload file to remote server via SCP with password auth
+
 ⚠️ IMPORTANT: ALWAYS use the dedicated tools above instead of bash commands!
 - For Git operations → Use git_* tools (git_status, git_commit, git_push, etc.)
 - For Docker operations → Use docker_* tools (docker_ps, docker_images, docker_logs, etc.)
+- For SSH operations → Use ssh_* tools (ssh_exec, ssh_upload, ssh_download, sshpass_exec, sshpass_upload)
 - For database queries → Use database_query tool
 - ONLY use bash for operations that don't have dedicated tools
 

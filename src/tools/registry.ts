@@ -33,6 +33,8 @@ import { skillListTool, skillEnableTool, skillDisableTool, skillInfoTool, skillC
 // Phase 10 — Subagents
 import { createSubagentTools } from "./subagent.js";
 import type { SubagentManager } from "../agent/subagent-manager.js";
+// Phase 11 — SSH
+import { sshExecTool, sshUploadTool, sshDownloadTool, sshListTool, sshpassExecTool, sshpassUploadTool } from "./ssh.js";
 
 // ─── All built-in tools ───────────────────────────────────────────────────────
 const BUILTIN_TOOLS: ToolHandler[] = [
@@ -117,6 +119,13 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   skillCreateTool,
   skillUpdateTool,
   skillDeleteTool,
+  // Phase 11 — SSH
+  sshExecTool,
+  sshUploadTool,
+  sshDownloadTool,
+  sshListTool,
+  sshpassExecTool,
+  sshpassUploadTool,
 ];
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
