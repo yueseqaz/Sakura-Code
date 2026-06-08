@@ -19,7 +19,11 @@ import { webSearchTool, fetchUrlTool } from "./web.js";
 // Phase 5 — TODOs
 import { todoWriteTool, todoReadTool } from "./todo.js";
 // Phase 6 — Docker
-import { dockerPsTool, dockerImagesTool, dockerLogsTool, dockerExecTool, dockerComposeTool } from "./docker.js";
+import { 
+  dockerPsTool, dockerImagesTool, dockerLogsTool, dockerExecTool, dockerComposeTool,
+  dockerBuildTool, dockerRunTool, dockerStopTool, dockerStartTool, dockerRestartTool,
+  dockerRmTool, dockerRmiTool, dockerVolumeTool, dockerNetworkTool
+} from "./docker.js";
 // Phase 7 — Database
 import { sqliteQueryTool, sqliteTablesTool, sqliteSchemaTool, mysqlQueryTool, postgresQueryTool } from "./database.js";
 // Phase 8 — Memory
@@ -84,6 +88,15 @@ const BUILTIN_TOOLS: ToolHandler[] = [
   dockerLogsTool,
   dockerExecTool,
   dockerComposeTool,
+  dockerBuildTool,
+  dockerRunTool,
+  dockerStopTool,
+  dockerStartTool,
+  dockerRestartTool,
+  dockerRmTool,
+  dockerRmiTool,
+  dockerVolumeTool,
+  dockerNetworkTool,
   // Phase 7 — Database
   sqliteQueryTool,
   sqliteTablesTool,

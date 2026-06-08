@@ -171,7 +171,10 @@ export class Agent {
     await this.contextManager.init();
     
     // 匹配并加载 Skill
-    ctx.matchAndLoadSkill(userInput);
+    const skillLoaded = ctx.matchAndLoadSkill(userInput);
+    if (skillLoaded) {
+      logger.info(`Loaded skill: ${ctx.getActiveSkill()}`);
+    }
     
     ctx.push({ role: "user", content: userInput });
     this.aborted = false;
