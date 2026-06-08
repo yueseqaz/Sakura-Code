@@ -96,28 +96,31 @@ program
       }
 
       // Interactive REPL mode
-      const HINT = "\x1b[90mEnter发送 | Option+Enter换行 | Ctrl+C退出\x1b[0m";
+      const HINT = "Enter发送 | Option+Enter换行 | Ctrl+C退出";
       
       const ask = (message: string): Promise<string> => {
         return new Promise((resolve) => {
-          process.stdout.write(message + " ");
+          const prompt = message + " ";
+          // Calculate visible length (ignore ANSI codes, handle emoji width)
+          const promptVisibleLen = 2; // ❯ + space
           
           let input = "";
-          let hintShown = false;
+          let showHint = true;
           
-          const showHint = () => {
-            if (!hintShown && !input) {
-              process.stdout.write(HINT);
-              hintShown = true;
-            }
-          };
-          
-          const hideHint = () => {
-            if (hintShown) {
-              // Clear hint
-              process.stdout.write("\r" + " ".repeat(50) + "\r");
-              process.stdout.write(message + " " + input);
-              hintShown = false;
+          const render = () => {
+            // Clear entire line
+            process.stdout.write("\r\x1b[2K");
+            if (showHint && !input) {
+              // Show prompt + hint in gray
+              process.stdout.write(prompt + "\x1b[90m" + HINT + "\x1b[0m");
+              // Move cursor back to start of input (after prompt)
+              process.stdout.write("\r");
+              for (let i = 0; i < promptVisibleLen; i++) {
+                process.stdout.write("\x1b[C");
+              }
+            } else {
+              // Show prompt + input
+              process.stdout.write(prompt + input);
             }
           };
           
@@ -136,86 +139,70 @@ program
               const char = str[i];
               const code = str.charCodeAt(i);
               
-              // Alt+Enter (Option+Enter on macOS) - newline
-              // Alt sends ESC (0x1B) followed by the key
+              // Alt+Enter - newline
               if (code === 27 && i + 1 < str.length) {
                 const nextChar = str[i + 1];
-                const nextCode = str.charCodeAt(i + 1);
                 if (nextChar === "\r" || nextChar === "\n") {
-                  hideHint();
                   input += "\n";
-                  process.stdout.write("\n" + message + " ");
-                  i++; // Skip the next character
+                  render();
+                  i++;
                   continue;
                 }
               }
               
-              // Enter (CR or LF) - send
+              // Enter - send
               if (char === "\r" || char === "\n") {
                 if (input.trim()) {
-                  // Has content - send
+                  process.stdout.write("\r\x1b[2K" + prompt + input + "\n");
                   cleanup();
-                  process.stdout.write("\n");
                   resolve(input);
                   return;
                 } else {
-                  // Empty - don't send, show hint
-                  hideHint();
-                  showHint();
+                  render();
                   continue;
                 }
               }
               
-              // Ctrl+C - interrupt
+              // Ctrl+C
               if (code === 3) {
-                cleanup();
                 process.stdout.write("\n");
+                cleanup();
                 process.exit(0);
               }
               
-              // Backspace (DEL or BS)
+              // Backspace
               if (code === 127 || code === 8) {
                 if (input.length > 0) {
                   input = input.slice(0, -1);
-                  hideHint();
-                  // Handle newline in input
-                  if (input.endsWith("\n")) {
-                    process.stdout.write("\b \b"); // Remove the newline display
-                  } else {
-                    process.stdout.write("\b \b");
-                  }
                 }
+                render();
                 continue;
               }
               
-              // Ctrl+U - clear line
+              // Ctrl+U - clear
               if (code === 21) {
-                hideHint();
-                process.stdout.write("\r" + " ".repeat(input.length + message.length + 2) + "\r");
-                process.stdout.write(message + " ");
                 input = "";
-                showHint();
+                render();
                 continue;
               }
               
-              // Regular printable character
+              // Regular char
               if (code >= 32) {
-                hideHint();
                 input += char;
-                process.stdout.write(char);
+                render();
               }
             }
           };
           
-          // Set up stdin for raw input
+          // Set up stdin
           if (process.stdin.isTTY) {
             process.stdin.setRawMode(true);
           }
           process.stdin.resume();
           process.stdin.on("data", onData);
           
-          // Show initial hint
-          showHint();
+          // Initial render
+          render();
         });
       };
 
