@@ -5,6 +5,7 @@ import { firstTimeSetup, interactiveConfig } from "./interactive-config.js";
 import { interactiveContext } from "./interactive-context.js";
 import { Agent } from "./agent/agent.js";
 import { Context } from "./agent/context.js";
+import { GoalRunner, printGoalResult } from "./agent/goal-runner.js";
 import { cleanTempMemories } from "./tools/memory.js";
 
 // Initialize config
@@ -34,17 +35,23 @@ function fmtTokens(n: number): string {
 program
   .argument("[prompt]", "Prompt to run")
   .option("-p, --print", "Non-interactive: run prompt and exit")
+  .option("-g, --goal <spec>", "Goal mode: run spec autonomously and exit")
   .option("-c, --continue", "Continue the last session")
   .option("--provider <name>", "Use a specific provider")
   .option("--model <name>", "Use a specific model")
   .option("--setup", "Run first-time setup")
   .option("--no-color", "Disable colored output")
+  .option("--max-iterations <n>", "Max iterations for goal mode (default: 50)")
+  .option("--timeout <ms>", "Timeout for goal mode in ms (default: 600000)")
   .action(async (prompt: string | undefined, opts: {
     print?: boolean;
+    goal?: string;
     continue?: boolean;
     provider?: string;
     model?: string;
     setup?: boolean;
+    maxIterations?: string;
+    timeout?: string;
   }) => {
     try {
       // Check if first-time setup is needed
@@ -93,6 +100,19 @@ program
           }
         }
         return;
+      }
+
+      // Goal mode - autonomous execution
+      if (opts.goal) {
+        const goalRunner = new GoalRunner(agent, ctx, {
+          maxIterations: opts.maxIterations ? parseInt(opts.maxIterations) : undefined,
+          timeout: opts.timeout ? parseInt(opts.timeout) : undefined,
+        });
+        
+        const result = await goalRunner.run(opts.goal);
+        ctx.save(SESSION_FILE);
+        printGoalResult(result);
+        process.exit(result.success ? 0 : 1);
       }
 
       // Interactive REPL mode
@@ -238,6 +258,7 @@ program
           console.log(`
 \x1b[1m🌸 Commands:\x1b[0m
 
+  \x1b[36m/goal <spec>\x1b[0m       — Run goal autonomously
   \x1b[36m/context\x1b[0m          — Context menu (view/set/clear)
   \x1b[36m/config\x1b[0m           — Configuration
   \x1b[36m/save\x1b[0m             — Save session
@@ -245,6 +266,19 @@ program
   \x1b[36m/help\x1b[0m             — Show this help
   \x1b[36mexit\x1b[0m              — Exit
 `);
+          continue;
+        }
+        if (input.trim().startsWith("/goal ")) {
+          const goal = input.trim().slice(6).trim();
+          if (!goal) {
+            console.log("\x1b[31m✗ Missing goal spec: /goal <spec>\x1b[0m\n");
+            continue;
+          }
+          
+          const goalRunner = new GoalRunner(agent, ctx);
+          const result = await goalRunner.run(goal);
+          ctx.save(SESSION_FILE);
+          printGoalResult(result);
           continue;
         }
         if (input.trim().startsWith("/context")) {
