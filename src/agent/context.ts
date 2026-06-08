@@ -126,6 +126,25 @@ export class Context {
     return true;
   }
 
+  // ─── 直接加载 Skill（用于工具调用）─────────────────────────────────────
+  loadSkillDirectly(skillName: string): boolean {
+    if (skillName === this.activeSkill) return false;
+    
+    const content = readSkillContent(skillName);
+    if (!content) return false;
+    
+    this.activeSkill = skillName;
+    
+    // 添加 skill 提示词到系统消息
+    const skillPrompt = `\n---\n\n## 当前激活 Skill: ${skillName}\n\n${content}`;
+    this.messages[0] = {
+      role: "system",
+      content: SYSTEM_PROMPT + skillPrompt,
+    };
+    
+    return true;
+  }
+
   // ─── 重置 Skill ──────────────────────────────────────────────────────────
   resetSkill(): void {
     if (this.activeSkill) {

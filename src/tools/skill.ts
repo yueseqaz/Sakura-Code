@@ -97,10 +97,26 @@ export function readSkillContent(name: string): string | null {
 }
 
 // ─── 匹配 Skill ─────────────────────────────────────────────────────────────
+// ─── 智能技能匹配 ────────────────────────────────────────────────────────────
 export function matchSkill(input: string): Skill | null {
   const skills = loadSkills();
   const lower = input.toLowerCase();
   
+  // 1. 先检查是否包含工具调用（更精确的匹配）
+  const toolPatterns = [
+    { pattern: /git[_\s]?(branch|push|pull|merge|rebase|commit|stash|checkout|clone|add|reset|revert|tag|cherry.?pick|blame|remote|show|clean|submodule|bisect|reflog|worktree|grep|config|init|fetch|diff|status|log)/i, skillName: "git-workflow" },
+    { pattern: /docker[_\s]?(build|run|compose|ps|images|exec|logs|stop|start|restart|rm|rmi|volume|network|pull|push|save|load|export|import|inspect|top|port|wait|attach|cp|events|system|context|scan|trust|manifest|hub|login|logout|search)/i, skillName: "docker-deploy" },
+    { pattern: /code[_\s]?review|审查|代码检查|检查代码|代码质量/i, skillName: "code-review" },
+  ];
+  
+  for (const { pattern, skillName } of toolPatterns) {
+    if (pattern.test(input)) {
+      const skill = skills.find(s => s.name === skillName && s.enabled);
+      if (skill) return skill;
+    }
+  }
+  
+  // 2. 检查 triggers 关键词
   for (const skill of skills) {
     if (!skill.enabled) continue;
     
@@ -108,6 +124,82 @@ export function matchSkill(input: string): Skill | null {
       if (lower.includes(trigger.toLowerCase())) {
         return skill;
       }
+    }
+  }
+  
+  return null;
+}
+
+// ─── 工具调用时匹配技能 ──────────────────────────────────────────────────────
+export function matchSkillByTool(toolName: string): Skill | null {
+  const skills = loadSkills();
+  
+  // 1. 硬编码映射（向后兼容）
+  const toolToSkill: Record<string, string> = {
+    "git_status": "git-workflow",
+    "git_diff": "git-workflow",
+    "git_commit": "git-workflow",
+    "git_log": "git-workflow",
+    "git_branch": "git-workflow",
+    "git_checkout": "git-workflow",
+    "git_stash": "git-workflow",
+    "git_merge": "git-workflow",
+    "git_pull": "git-workflow",
+    "git_push": "git-workflow",
+    "git_clone": "git-workflow",
+    "git_add": "git-workflow",
+    "git_reset": "git-workflow",
+    "git_revert": "git-workflow",
+    "git_rebase": "git-workflow",
+    "git_fetch": "git-workflow",
+    "git_tag": "git-workflow",
+    "git_cherry_pick": "git-workflow",
+    "git_blame": "git-workflow",
+    "git_remote": "git-workflow",
+    "git_show": "git-workflow",
+    "git_clean": "git-workflow",
+    "git_submodule": "git-workflow",
+    "git_bisect": "git-workflow",
+    "git_reflog": "git-workflow",
+    "git_worktree": "git-workflow",
+    "git_grep": "git-workflow",
+    "git_config": "git-workflow",
+    "git_init": "git-workflow",
+    "docker_build": "docker-deploy",
+    "docker_run": "docker-deploy",
+    "docker_compose": "docker-deploy",
+    "docker_ps": "docker-deploy",
+    "docker_images": "docker-deploy",
+    "docker_exec": "docker-deploy",
+    "docker_logs": "docker-deploy",
+    "docker_stop": "docker-deploy",
+    "docker_start": "docker-deploy",
+    "docker_restart": "docker-deploy",
+    "docker_rm": "docker-deploy",
+    "docker_rmi": "docker-deploy",
+    "docker_volume": "docker-deploy",
+    "docker_network": "docker-deploy",
+  };
+  
+  // 先检查硬编码映射
+  const skillName = toolToSkill[toolName];
+  if (skillName) {
+    return skills.find(s => s.name === skillName && s.enabled) || null;
+  }
+  
+  // 2. 动态匹配：检查工具名前缀是否匹配技能的 tags
+  const toolPrefix = toolName.split("_")[0].toLowerCase();
+  for (const skill of skills) {
+    if (!skill.enabled) continue;
+    
+    // 检查技能的 tags 是否包含工具前缀
+    if (skill.tags.some(tag => tag.toLowerCase() === toolPrefix)) {
+      return skill;
+    }
+    
+    // 检查技能的 triggers 是否包含工具前缀
+    if (skill.triggers.some(trigger => trigger.toLowerCase().includes(toolPrefix))) {
+      return skill;
     }
   }
   

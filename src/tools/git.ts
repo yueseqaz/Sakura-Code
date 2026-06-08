@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { assertSafePath, truncate } from "../utils/security.js";
+import { confirmAction } from "../utils/confirm.js";
 import type { ToolHandler, ToolDef, GitArgs, GitCommitArgs } from "../types.js";
 
 function git(args: string[], cwd = process.cwd()): string {
@@ -175,6 +176,13 @@ export const gitBranchTool: ToolHandler = {
 
     if (action === "delete") {
       if (!name) return "Error: Branch name is required for delete action.";
+      
+      // Confirm branch deletion
+      const confirmed = await confirmAction("删除分支", `git branch -d ${name}`);
+      if (!confirmed) {
+        return "❌ 操作已取消";
+      }
+      
       return git(["branch", "-d", name], abs);
     }
 
@@ -361,6 +369,17 @@ export const gitPushTool: ToolHandler = {
       path?: string; remote?: string; branch?: string; force?: boolean; tags?: boolean;
     };
     const abs = assertSafePath(path);
+
+    // Confirm force push
+    if (force) {
+      const confirmed = await confirmAction(
+        "Force Push",
+        `git push --force ${remote}/${branch || "当前分支"}`
+      );
+      if (!confirmed) {
+        return "❌ 操作已取消";
+      }
+    }
 
     const pushArgs = ["push", remote];
     if (force) pushArgs.push("--force");
@@ -619,6 +638,13 @@ export const gitTagTool: ToolHandler = {
     if (action === "list") return git(["tag"], abs) || "No tags found.";
     if (action === "delete") {
       if (!name) return "Error: Tag name is required.";
+      
+      // Confirm tag deletion
+      const confirmed = await confirmAction("删除标签", `git tag -d ${name}`);
+      if (!confirmed) {
+        return "❌ 操作已取消";
+      }
+      
       return git(["tag", "-d", name], abs);
     }
 
@@ -812,6 +838,17 @@ export const gitCleanTool: ToolHandler = {
 
     if (!force && !dry_run) {
       return "Error: Use force=true to actually delete, or dry_run=true to preview.";
+    }
+
+    // Confirm actual deletion
+    if (force && !dry_run) {
+      const confirmed = await confirmAction(
+        "删除未跟踪文件",
+        `git clean -f${directories ? " -d" : ""}`
+      );
+      if (!confirmed) {
+        return "❌ 操作已取消";
+      }
     }
 
     const cleanArgs = ["clean"];

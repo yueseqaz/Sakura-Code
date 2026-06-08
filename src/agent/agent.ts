@@ -4,6 +4,7 @@ import { Registry } from "../tools/registry.js";
 import { logger } from "../utils/logger.js";
 import { ContextManager } from "../utils/context-manager.js";
 import { SubagentManager } from "./subagent-manager.js";
+import { matchSkillByTool } from "../tools/skill.js";
 import type { AgentConfig, ChatMsg } from "../types.js";
 
 const MAX_ITERATIONS = 50;
@@ -347,7 +348,8 @@ export class Agent {
           id: tc.id,
           type: "function" as const,
           function: { name: tc.name, arguments: tc.arguments },
-        }))
+        })),
+        ctx
       );
       ctx.push(...toolResults);
 
@@ -364,11 +366,25 @@ export class Agent {
 
   // ─── Tool Dispatch ─────────────────────────────────────────────────────────
   private async executeTools(
-    toolCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[]
+    toolCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[],
+    ctx?: Context
   ): Promise<ChatMsg[]> {
     const results = await Promise.all(
       toolCalls.map(async (call): Promise<ChatMsg> => {
         const { name, arguments: argsJson } = call.function;
+        
+        // 检查是否需要加载技能
+        if (ctx) {
+          const skill = matchSkillByTool(name);
+          if (skill && skill.name !== ctx.getActiveSkill()) {
+            // 直接加载技能，不通过 matchAndLoadSkill
+            const loaded = ctx.loadSkillDirectly(skill.name);
+            if (loaded) {
+              logger.info(`Loaded skill: ${skill.name}`);
+            }
+          }
+        }
+        
         logger.toolCall(name, argsJson);
 
         let content: string;

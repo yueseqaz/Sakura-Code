@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { assertSafeCommand, truncate } from "../utils/security.js";
+import { isDangerousBashCommand, confirmAction } from "../utils/confirm.js";
 import type { ToolHandler, ToolDef, BashArgs } from "../types.js";
 
 export const bashTool: ToolHandler = {
@@ -32,6 +33,14 @@ export const bashTool: ToolHandler = {
   async execute(args) {
     const { command, timeout_ms = 60_000 } = args as unknown as BashArgs;
     assertSafeCommand(command);
+
+    // Check for dangerous commands
+    if (isDangerousBashCommand(command)) {
+      const confirmed = await confirmAction("执行危险命令", command);
+      if (!confirmed) {
+        return "❌ 操作已取消";
+      }
+    }
 
     const result = spawnSync("bash", ["-lc", command], {
       encoding: "utf8",
