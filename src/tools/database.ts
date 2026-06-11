@@ -120,7 +120,10 @@ export const sqliteSchemaTool: ToolHandler = {
       return `Error: Database file not found: ${database}`;
     }
 
-    const query = `SELECT sql FROM sqlite_master WHERE type='table' AND name='${table}';`;
+    // Sanitize table name: only allow alphanumeric, underscore, and dot
+    const safeTable = table.replace(/[^a-zA-Z0-9_.]/g, "");
+    if (!safeTable) return `Error: Invalid table name: ${table}`;
+    const query = `SELECT sql FROM sqlite_master WHERE type='table' AND name='${safeTable}';`;
     const cmd = ["sqlite3", database, query];
 
     const result = spawnSync(cmd[0], cmd.slice(1), { encoding: "utf8", timeout: 30_000 });

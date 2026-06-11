@@ -5,7 +5,7 @@ import { logger } from "../utils/logger.js";
 import { ContextManager } from "../utils/context-manager.js";
 import { SubagentManager } from "./subagent-manager.js";
 import { matchSkillByTool } from "../tools/skill.js";
-import type { AgentConfig, ChatMsg } from "../types.js";
+import type { AgentConfig, ChatMsg, MCPAdapter } from "../types.js";
 
 const MAX_ITERATIONS = 50;
 const MAX_RETRIES = 3;
@@ -48,6 +48,8 @@ export class Agent {
   private progressCallback: ((progress: string) => void) | null = null;
   private silent: boolean = false; // 静默模式
   private outputBuffer: string[] = []; // 输出缓冲区（静默模式用）
+  private mcpServers: MCPAdapter[];
+  private mcpLoaded: boolean = false;
 
   constructor(config: AgentConfig = {}) {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
@@ -61,6 +63,7 @@ export class Agent {
     this.model = model;
     this.maxIterations = config.maxIterations ?? MAX_ITERATIONS;
     this.registry = new Registry();
+    this.mcpServers = config.mcpServers ?? [];
 
     // 初始化 context manager
     this.contextManager = new ContextManager({
@@ -75,11 +78,6 @@ export class Agent {
 
     // 加载子代理工具
     this.registry.loadSubagentTools(this.subagentManager);
-
-    // Load MCP servers
-    if (config.mcpServers?.length) {
-      Promise.all(config.mcpServers.map((s) => this.registry.loadMCP(s)));
-    }
 
     // Setup Ctrl+C handler
     this.setupSignalHandlers();
@@ -114,7 +112,12 @@ export class Agent {
   }
 
   // ─── Signal Handlers (Ctrl+C) ──────────────────────────────────────────────
+  private static signalHandlerAttached = false;
+
   private setupSignalHandlers(): void {
+    if (Agent.signalHandlerAttached) return;
+    Agent.signalHandlerAttached = true;
+
     process.on("SIGINT", () => {
       if (this.currentAbortController) {
         this.aborted = true;
@@ -166,6 +169,12 @@ export class Agent {
 
   // ─── Main Agent Loop ──────────────────────────────────────────────────────
   async run(ctx: Context, userInput: string): Promise<void> {
+    // Load MCP servers on first run (deferred from constructor)
+    if (!this.mcpLoaded && this.mcpServers.length > 0) {
+      await Promise.all(this.mcpServers.map((s) => this.registry.loadMCP(s)));
+      this.mcpLoaded = true;
+    }
+
     // 初始化 context manager（从 API 获取 context window）
     this.progressCallback?.("Initializing context manager...");
     await this.contextManager.init();
@@ -327,11 +336,12 @@ export class Agent {
       };
 
       if (toolCalls.size > 0) {
-        (assistantMsg as any).tool_calls = Array.from(toolCalls.entries()).map(([_, tc]) => ({
-          id: tc.id,
-          type: "function",
-          function: { name: tc.name, arguments: tc.arguments },
-        }));
+        (assistantMsg as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam).tool_calls =
+          Array.from(toolCalls.entries()).map(([_, tc]) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          }));
       }
 
       ctx.push(assistantMsg);

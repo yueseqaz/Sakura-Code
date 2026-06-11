@@ -5,13 +5,13 @@ import { logger } from "../utils/logger.js";
 import { bashTool } from "./bash.js";
 import { readFileTool, writeFileTool, editFileTool, listFilesTool, searchFilesTool } from "./filesystem.js";
 // Phase 2 — Git
-import { 
-  gitStatusTool, gitDiffTool, gitCommitTool, gitLogTool, gitBranchTool, gitCheckoutTool, 
-  gitStashTool, gitMergeTool, gitPullTool, gitPushTool, gitCloneTool, gitAddTool, 
+import {
+  gitStatusTool, gitDiffTool, gitCommitTool, gitLogTool, gitBranchTool, gitCheckoutTool,
+  gitStashTool, gitMergeTool, gitPullTool, gitPushTool, gitCloneTool, gitAddTool,
   gitResetTool, gitRevertTool, gitRebaseTool, gitFetchTool, gitTagTool, gitCherryPickTool,
   gitBlameTool, gitRemoteTool, gitShowTool, gitCleanTool, gitSubmoduleTool, gitBisectTool,
   gitReflogTool, gitWorktreeTool, gitGrepTool, gitConfigTool, gitInitTool
-} from "./git.js";
+} from "./git/index.js";
 // Phase 3 — Index & Semantic
 import { projectIndexTool, semanticSearchTool } from "./index.js";
 // Phase 4 — Web

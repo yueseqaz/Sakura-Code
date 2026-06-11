@@ -16,9 +16,9 @@ export const DEFAULT_POLICY: SecurityPolicy = {
     "rm -rf /", "rm -rf ~", "rm -rf /*",
     "mkfs", "dd if=", ":(){:|:&};:",   // fork bomb
     // privilege escalation
-    "sudo su", "chmod 777 /", "chown root",
+    "sudo su", "chmod 777", "chown root",
     // network exfil
-    "curl.*|.*bash", "wget.*|.*bash",
+    "curl.*|.*bash", "wget.*|.*bash", "curl.*|.*sh", "wget.*|.*sh",
     // shell injection sentinels
     "eval $(", "`rm", "$(rm",
   ],
@@ -59,13 +59,25 @@ export function assertSafeCommand(
   policy: SecurityPolicy = DEFAULT_POLICY
 ): void {
   const lower = command.toLowerCase();
+  // Normalize whitespace to prevent bypass via "rm  -rf  /"
+  const normalized = lower.replace(/\s+/g, " ");
   const blocked = policy.blockedCommands ?? [];
 
   for (const pattern of blocked) {
-    if (lower.includes(pattern.toLowerCase())) {
-      throw new Error(
-        `Blocked command detected: '${pattern}' is not permitted for safety reasons`
-      );
+    const patLower = pattern.toLowerCase();
+    // Use regex matching for patterns containing .* (regex-style wildcards)
+    if (patLower.includes(".*")) {
+      if (new RegExp(patLower).test(normalized)) {
+        throw new Error(
+          `Blocked command detected: '${pattern}' is not permitted for safety reasons`
+        );
+      }
+    } else {
+      if (normalized.includes(patLower) || lower.includes(patLower)) {
+        throw new Error(
+          `Blocked command detected: '${pattern}' is not permitted for safety reasons`
+        );
+      }
     }
   }
 

@@ -150,11 +150,11 @@ export const sshListTool: ToolHandler = {
     const result = spawnSync("ssh", ["-G", filter || "*"], { encoding: "utf8", timeout: 5000 });
     
     // Parse ssh config
+    const { readFileSync } = await import("node:fs");
     const configPath = `${process.env.HOME}/.ssh/config`;
-    const fs = require("fs");
-    
+
     try {
-      const config = fs.readFileSync(configPath, "utf8");
+      const config = readFileSync(configPath, "utf8");
       const hosts = config.split("\n")
         .filter((line: string) => line.trim().toLowerCase().startsWith("host "))
         .map((line: string) => line.trim().split(/\s+/).slice(1).join(" "))
@@ -203,13 +203,17 @@ export const sshpassExecTool: ToolHandler = {
     const username = user || "root";
     const sshHost = `${username}@${host}`;
     
-    const cmd = ["sshpass", "-p", password, "ssh"];
+    const cmd = ["sshpass", "-e", "ssh"];
     if (port) cmd.push("-p", String(port));
     cmd.push("-o", `ConnectTimeout=${timeout}`);
     cmd.push("-o", "StrictHostKeyChecking=no");
     cmd.push(sshHost, command);
 
-    const result = spawnSync(cmd[0], cmd.slice(1), { encoding: "utf8", timeout: (timeout + 5) * 1000 });
+    const result = spawnSync(cmd[0], cmd.slice(1), {
+      encoding: "utf8",
+      timeout: (timeout + 5) * 1000,
+      env: { ...process.env, SSHPASS: password },
+    });
     if (result.error) return `Error: ${result.error.message}`;
     if (result.status !== 0) return `Error: ${result.stderr || result.stdout}`;
     return truncate(result.stdout || "Command executed.", 32_000);
@@ -248,13 +252,17 @@ export const sshpassUploadTool: ToolHandler = {
     const username = user || "root";
     const sshHost = `${username}@${host}`;
     
-    const cmd = ["sshpass", "-p", password, "scp"];
+    const cmd = ["sshpass", "-e", "scp"];
     if (port) cmd.push("-P", String(port));
     if (recursive) cmd.push("-r");
     cmd.push("-o", "StrictHostKeyChecking=no");
     cmd.push(local_path, `${sshHost}:${remote_path}`);
 
-    const result = spawnSync(cmd[0], cmd.slice(1), { encoding: "utf8", timeout: 120_000 });
+    const result = spawnSync(cmd[0], cmd.slice(1), {
+      encoding: "utf8",
+      timeout: 120_000,
+      env: { ...process.env, SSHPASS: password },
+    });
     if (result.error) return `Error: ${result.error.message}`;
     if (result.status !== 0) return `Error: ${result.stderr}`;
     return `Uploaded ${local_path} to ${sshHost}:${remote_path}`;
