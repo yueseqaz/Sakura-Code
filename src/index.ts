@@ -158,18 +158,35 @@ program
 
       let inputBuffer = "";
       let cursorPos = 0;
+      let contextSuffix = ""; // e.g. " | Context: 15.2k/128k (11.9%)"
+
+      // Format context usage from context manager
+      const updateContextStatus = async () => {
+        try {
+          const cm = agent.getContextManager();
+          const status = await cm.getStatus(ctx.messages);
+          const fmt = (n: number) => n >= 1000000 ? (n / 1000000).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+          contextSuffix = `\x1b[90m | Context: ${fmt(status.tokenCount)}/${fmt(status.maxTokens)} (${(status.usage * 100).toFixed(1)}%)\x1b[0m`;
+        } catch {
+          contextSuffix = "";
+        }
+      };
+
+      // Build the hint placeholder (hint + context, all one line)
+      const getHint = () => HIDDEN + contextSuffix;
 
       // Render the current input line with prompt
       const renderLine = () => {
         process.stdout.write("\r\x1b[2K");
         process.stdout.write(PROMPT_STR);
         if (inputBuffer) {
+          // User is typing — show input, cursor at end
           process.stdout.write(inputBuffer);
         } else {
-          process.stdout.write(HIDDEN);
+          // Empty — show hint placeholder, cursor at prompt position
+          process.stdout.write(getHint());
+          process.stdout.write("\r" + PROMPT_STR);
         }
-        // Move cursor back to right after prompt
-        process.stdout.write("\r" + PROMPT_STR);
       };
 
       // ask() returns a promise that resolves when user submits non-empty input
@@ -412,6 +429,7 @@ program
 
         await agent.run(ctx, input);
         ctx.save(SESSION_FILE);
+        await updateContextStatus();
 
         // Show token usage
         const { main, subagent, grand } = agent.getGrandTotalTokens();
