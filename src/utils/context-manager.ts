@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import OpenAI from "openai";
 import type { ChatMsg } from "../types.js";
-import type { ToolHandler, ToolDef } from "../types.js";
 
 // ─── 模型 Context Window 映射 ─────────────────────────────────────────────────
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
@@ -122,14 +122,21 @@ const DEFAULT_CONFIG: ContextConfig = {
 export class ContextManager {
   private config: ContextConfig;
   private lastUsage: { prompt: number; completion: number; total: number } | null = null;
-  private isCompressing = false;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+  private llmClient: OpenAI | null = null;
 
   constructor(config: Partial<ContextConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     // 加载保存的配置
     this.loadConfig();
+    // 初始化 LLM client（用于摘要生成）
+    if (this.config.apiKey) {
+      this.llmClient = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseURL,
+      });
+    }
   }
 
   // ─── 异步初始化（从 API 获取 context window）────────────────────────────
@@ -285,12 +292,11 @@ export class ContextManager {
   // ─── 压缩消息 ─────────────────────────────────────────────────────────────
   async compress(messages: ChatMsg[]): Promise<{ messages: ChatMsg[]; compressed: boolean; level: number }> {
     const { needed, level } = await this.needsCompression(messages);
-    
+
     if (!needed) {
       return { messages, compressed: false, level: 0 };
     }
 
-    this.isCompressing = true;
     let result = [...messages];
 
     // Level 1: 移除工具调用详情
@@ -303,11 +309,10 @@ export class ContextManager {
       const stillNeeded = await this.needsCompression(result);
       if (stillNeeded.needed) {
         // Level 2 & 3: 保留最近 N 轮 + 系统提示词
-        result = this.slidingWindow(result);
+        result = await this.slidingWindow(result);
       }
     }
 
-    this.isCompressing = false;
     return { messages: result, compressed: true, level };
   }
 
@@ -339,16 +344,16 @@ export class ContextManager {
   }
 
   // ─── Level 2/3: 滑动窗口 ─────────────────────────────────────────────────
-  private slidingWindow(messages: ChatMsg[]): ChatMsg[] {
+  private async slidingWindow(messages: ChatMsg[]): Promise<ChatMsg[]> {
     const keepRounds = this.config.keepRecentRounds;
-    
+
     // 找到系统提示词（第一条）
     const systemMsg = messages[0];
     const rest = messages.slice(1);
 
     // 计算要保留的消息数（每轮约 2-3 条消息）
     const keepCount = keepRounds * 3;
-    
+
     if (rest.length <= keepCount) {
       return messages; // 已经够短
     }
@@ -357,8 +362,13 @@ export class ContextManager {
     const oldMessages = rest.slice(0, rest.length - keepCount);
     const newMessages = rest.slice(rest.length - keepCount);
 
-    // 生成摘要
-    const summary = this.generateSummary(oldMessages);
+    // 生成摘要（优先 LLM，回退本地启发式）
+    let summary: string;
+    try {
+      summary = await this.generateLLMSummary(oldMessages);
+    } catch {
+      summary = this.generateLocalSummary(oldMessages);
+    }
 
     // 组合：系统提示词 + 摘要 + 最近消息
     return [
@@ -368,22 +378,74 @@ export class ContextManager {
     ];
   }
 
-  // ─── 生成摘要 ─────────────────────────────────────────────────────────────
-  private generateSummary(messages: ChatMsg[]): string {
-    // 提取关键信息
+  // ─── LLM 摘要生成 ────────────────────────────────────────────────────────
+  private async generateLLMSummary(messages: ChatMsg[]): Promise<string> {
+    if (!this.llmClient) {
+      throw new Error("No LLM client available");
+    }
+
+    // 序列化消息为文本
+    const serialized = messages
+      .map((msg) => {
+        const content = typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("")
+            : "";
+
+        if (msg.role === "user") {
+          return `[用户] ${content.slice(0, 500)}`;
+        }
+        if (msg.role === "assistant") {
+          return `[助手] ${content.slice(0, 500)}`;
+        }
+        if (msg.role === "tool") {
+          return `[工具结果] ${content.slice(0, 200)}`;
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    if (!serialized.trim()) {
+      throw new Error("No content to summarize");
+    }
+
+    const response = await this.llmClient.chat.completions.create({
+      model: this.config.model || "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "你是一个对话摘要助手。请将以下对话历史压缩为简洁的摘要，保留：\n" +
+            "1. 用户的核心需求和目标\n" +
+            "2. 已完成的关键操作（文件修改、命令执行结果）\n" +
+            "3. 未解决的问题或待办事项\n" +
+            "4. 重要的技术决策和上下文\n\n" +
+            "输出格式为纯文本摘要，不超过 500 字。不要加标题或前缀。",
+        },
+        { role: "user", content: serialized },
+      ],
+      max_tokens: 600,
+      temperature: 0.3,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || this.generateLocalSummary(messages);
+  }
+
+  // ─── 本地启发式摘要（LLM 失败时的 fallback）─────────────────────────────
+  private generateLocalSummary(messages: ChatMsg[]): string {
     const topics: string[] = [];
     const actions: string[] = [];
 
     for (const msg of messages) {
       if (typeof msg.content === "string") {
-        // 用户消息：提取主题
         if (msg.role === "user") {
           const preview = msg.content.slice(0, 100);
           if (preview.length > 10) {
             topics.push(preview);
           }
         }
-        // 助手消息：提取操作
         if (msg.role === "assistant" && msg.content) {
           const preview = msg.content.slice(0, 80);
           if (preview.length > 10) {
@@ -393,7 +455,6 @@ export class ContextManager {
       }
     }
 
-    // 构建摘要
     const parts: string[] = [];
     if (topics.length > 0) {
       parts.push(`讨论了: ${topics.slice(0, 3).join("; ")}`);

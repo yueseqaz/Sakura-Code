@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { createInterface, emitKeypressEvents } from "node:readline";
 import { ConfigManager } from "./config.js";
 import { firstTimeSetup, interactiveConfig } from "./interactive-config.js";
 import { interactiveContext } from "./interactive-context.js";
@@ -7,6 +8,8 @@ import { Agent } from "./agent/agent.js";
 import { Context } from "./agent/context.js";
 import { GoalRunner, printGoalResult } from "./agent/goal-runner.js";
 import { cleanTempMemories } from "./tools/memory.js";
+import { logger } from "./utils/logger.js";
+import prompts from "prompts";
 
 // Initialize config
 const configManager = new ConfigManager();
@@ -66,17 +69,35 @@ program
       }
 
       // Resolve API config
-      const { apiKey, baseURL, model: defaultModel } = configManager.resolveForAgent();
-      const model = opts.model ?? defaultModel;
+      let { apiKey, baseURL, model: defaultModel } = configManager.resolveForAgent();
+      let model = opts.model ?? defaultModel;
 
-      // Validate API key on startup
-      const validation = await configManager.validateApiKey();
-      if (!validation.valid) {
-        console.error("\x1b[31m✗ API key validation failed: " + validation.error + "\x1b[0m");
-        console.error("\x1b[90mRun 'sakura-code config' to fix your configuration\x1b[0m");
-        process.exit(1);
+      // Validate API key on startup — guide user to reconfigure on failure
+      let validation = await configManager.validateApiKey();
+      while (!validation.valid) {
+        console.warn("\x1b[33m⚠ API validation failed: " + validation.error + "\x1b[0m\n");
+        const { reconfigure } = await prompts({
+          type: "confirm",
+          name: "reconfigure",
+          message: "Do you want to reconfigure now?",
+          initial: true,
+        });
+        if (reconfigure) {
+          await interactiveConfig(configManager);
+          // Re-resolve config after reconfiguration
+          const resolved = configManager.resolveForAgent();
+          apiKey = resolved.apiKey;
+          baseURL = resolved.baseURL;
+          model = opts.model ?? resolved.model;
+          validation = await configManager.validateApiKey();
+        } else {
+          console.warn("\x1b[90m  Continuing with current config — errors may occur.\x1b[0m\n");
+          break;
+        }
       }
-      console.log("\x1b[32m✓ Connected to " + configManager.get().defaultProvider + "\x1b[0m\n");
+      if (validation.valid) {
+        console.log("\x1b[32m✓ Connected to " + configManager.get().defaultProvider + "\x1b[0m\n");
+      }
 
       const ctx = opts.continue ? Context.load(SESSION_FILE) : new Context();
       const agent = new Agent({ apiKey, baseURL, model });
@@ -116,126 +137,190 @@ program
       }
 
       // Interactive REPL mode
-      const HINT = "Enter发送 | Option+Enter换行 | Ctrl+C退出";
-      
-      const ask = (message: string): Promise<string> => {
+      const PROMPT_STR = "\x1b[1;32m❯\x1b[0m ";
+      const HINT = "Enter发送 | ESC清空 | 历史↑↓ | Ctrl+C退出";
+      const HIDDEN = "\x1b[90m" + HINT + "\x1b[0m";
+
+      // Set up readline with history (terminal: false — we handle raw input ourselves)
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        historySize: 1000,
+        removeHistoryDuplicates: true,
+        terminal: false,
+      }) as ReturnType<typeof createInterface> & { history: string[] };
+
+      // Enable keypress events for custom Enter handling
+      emitKeypressEvents(process.stdin);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+      }
+
+      let inputBuffer = "";
+      let cursorPos = 0;
+
+      // Render the current input line with prompt
+      const renderLine = () => {
+        process.stdout.write("\r\x1b[2K");
+        process.stdout.write(PROMPT_STR);
+        if (inputBuffer) {
+          process.stdout.write(inputBuffer);
+        } else {
+          process.stdout.write(HIDDEN);
+        }
+        // Move cursor back to right after prompt
+        process.stdout.write("\r" + PROMPT_STR);
+      };
+
+      // ask() returns a promise that resolves when user submits non-empty input
+      const ask = (): Promise<string> => {
         return new Promise((resolve) => {
-          const prompt = message + " ";
-          // Calculate visible length (ignore ANSI codes, handle emoji width)
-          const promptVisibleLen = 2; // ❯ + space
-          
-          let input = "";
-          let showHint = true;
-          
-          const render = () => {
-            // Clear entire line
-            process.stdout.write("\r\x1b[2K");
-            if (showHint && !input) {
-              // Show prompt + hint in gray
-              process.stdout.write(prompt + "\x1b[90m" + HINT + "\x1b[0m");
-              // Move cursor back to start of input (after prompt)
-              process.stdout.write("\r");
-              for (let i = 0; i < promptVisibleLen; i++) {
+          inputBuffer = "";
+          cursorPos = 0;
+          renderLine();
+
+          const onKeypress = (_str: string, key: { name: string; ctrl: boolean; meta: boolean; shift: boolean; sequence: string } | undefined) => {
+            if (!key) return;
+
+            // Ctrl+C → exit
+            if (key.ctrl && key.name === "c") {
+              process.stdout.write("\n");
+              process.stdin.removeListener("keypress", onKeypress);
+              ctx.save(SESSION_FILE);
+              process.exit(0);
+            }
+
+            // Ctrl+U → clear line
+            if (key.ctrl && key.name === "u") {
+              inputBuffer = "";
+              cursorPos = 0;
+              renderLine();
+              return;
+            }
+
+            // Backspace
+            if (key.name === "backspace") {
+              if (cursorPos > 0) {
+                inputBuffer = inputBuffer.slice(0, cursorPos - 1) + inputBuffer.slice(cursorPos);
+                cursorPos--;
+                renderLine();
+              }
+              return;
+            }
+
+            // Delete
+            if (key.name === "delete") {
+              if (cursorPos < inputBuffer.length) {
+                inputBuffer = inputBuffer.slice(0, cursorPos) + inputBuffer.slice(cursorPos + 1);
+                renderLine();
+              }
+              return;
+            }
+
+            // Left arrow
+            if (key.name === "left") {
+              if (cursorPos > 0) {
+                cursorPos--;
+                process.stdout.write("\x1b[D");
+              }
+              return;
+            }
+
+            // Right arrow
+            if (key.name === "right") {
+              if (cursorPos < inputBuffer.length) {
+                cursorPos++;
                 process.stdout.write("\x1b[C");
               }
-            } else {
-              // Show prompt + input
-              process.stdout.write(prompt + input);
+              return;
+            }
+
+            // Home
+            if (key.name === "home") {
+              cursorPos = 0;
+              process.stdout.write("\r" + PROMPT_STR);
+              return;
+            }
+
+            // End
+            if (key.name === "end") {
+              cursorPos = inputBuffer.length;
+              renderLine();
+              return;
+            }
+
+            // ESC → clear input
+            if (key.name === "escape") {
+              inputBuffer = "";
+              cursorPos = 0;
+              renderLine();
+              return;
+            }
+
+            // Enter → submit
+            if (key.name === "return" || key.name === "enter") {
+              if (inputBuffer.trim()) {
+                // Submit: print input + newline
+                process.stdout.write("\r\x1b[2K" + PROMPT_STR + inputBuffer + "\n");
+                process.stdin.removeListener("keypress", onKeypress);
+                rl.history.unshift(inputBuffer);
+                resolve(inputBuffer);
+              }
+              // Empty input → do nothing
+              return;
+            }
+
+            // Up/Down arrow → readline history navigation
+            if (key.name === "up" || key.name === "down") {
+              // Handled by readline in non-raw mode, but we're in raw mode
+              // so we need to handle it manually
+              const direction = key.name === "up" ? -1 : 1;
+              // Find current position in history
+              const histIdx = rl.history.indexOf(inputBuffer);
+              let newIdx: number;
+              if (histIdx === -1) {
+                newIdx = direction === -1 ? 0 : -1;
+              } else {
+                newIdx = histIdx + direction;
+              }
+              if (newIdx >= 0 && newIdx < rl.history.length) {
+                inputBuffer = rl.history[newIdx];
+                cursorPos = inputBuffer.length;
+              } else if (newIdx < 0) {
+                inputBuffer = "";
+                cursorPos = 0;
+              }
+              renderLine();
+              return;
+            }
+
+            // Printable character
+            if (key.sequence && !key.ctrl && !key.meta && key.sequence.length === 1 && key.sequence.charCodeAt(0) >= 32) {
+              inputBuffer = inputBuffer.slice(0, cursorPos) + key.sequence + inputBuffer.slice(cursorPos);
+              cursorPos++;
+              renderLine();
             }
           };
-          
-          const cleanup = () => {
-            process.stdin.removeListener("data", onData);
-            if (process.stdin.isTTY) {
-              process.stdin.setRawMode(false);
-            }
-            process.stdin.pause();
-          };
-          
-          const onData = (chunk: Buffer) => {
-            const str = chunk.toString();
-            
-            for (let i = 0; i < str.length; i++) {
-              const char = str[i];
-              const code = str.charCodeAt(i);
-              
-              // Alt+Enter - newline
-              if (code === 27 && i + 1 < str.length) {
-                const nextChar = str[i + 1];
-                if (nextChar === "\r" || nextChar === "\n") {
-                  input += "\n";
-                  render();
-                  i++;
-                  continue;
-                }
-              }
-              
-              // Enter - send
-              if (char === "\r" || char === "\n") {
-                if (input.trim()) {
-                  process.stdout.write("\r\x1b[2K" + prompt + input + "\n");
-                  cleanup();
-                  resolve(input);
-                  return;
-                } else {
-                  render();
-                  continue;
-                }
-              }
-              
-              // Ctrl+C
-              if (code === 3) {
-                process.stdout.write("\n");
-                cleanup();
-                process.exit(0);
-              }
-              
-              // Backspace
-              if (code === 127 || code === 8) {
-                if (input.length > 0) {
-                  input = input.slice(0, -1);
-                }
-                render();
-                continue;
-              }
-              
-              // Ctrl+U - clear
-              if (code === 21) {
-                input = "";
-                render();
-                continue;
-              }
-              
-              // Regular char
-              if (code >= 32) {
-                input += char;
-                render();
-              }
-            }
-          };
-          
-          // Set up stdin
-          if (process.stdin.isTTY) {
-            process.stdin.setRawMode(true);
-          }
-          process.stdin.resume();
-          process.stdin.on("data", onData);
-          
-          // Initial render
-          render();
+
+          process.stdin.on("keypress", onKeypress);
         });
       };
 
       console.log("\x1b[36m🌸\x1b[0m \x1b[1mSakura Code\x1b[0m \x1b[90mv0.1.0\x1b[0m");
       console.log("\x1b[90m   Your cute AI coding companion~ ♡\x1b[0m\n");
-      console.log("   Commands: /help /context /config /save /clear\n");
+      console.log("   Commands: /help /context /config /save /clear /compact\n");
 
       while (true) {
-        const input = prompt ?? (await ask("\x1b[1;32m❯\x1b[0m "));
-        prompt = undefined;
+        let input: string;
+        if (prompt) {
+          input = prompt;
+          prompt = undefined;
+        } else {
+          input = await ask();
+        }
 
-        if (!input.trim() || input.trim() === "exit") break;
-        
+        if (input.trim() === "exit") break;
+
         // Slash commands
         if (input.trim() === "/clear") {
           Object.assign(ctx, new Context());
@@ -263,9 +348,22 @@ program
   \x1b[36m/config\x1b[0m           — Configuration
   \x1b[36m/save\x1b[0m             — Save session
   \x1b[36m/clear\x1b[0m            — Clear context
+  \x1b[36m/compact\x1b[0m          — Compress context manually
   \x1b[36m/help\x1b[0m             — Show this help
   \x1b[36mexit\x1b[0m              — Exit
 `);
+          continue;
+        }
+        if (input.trim() === "/compact") {
+          const contextManager = agent.getContextManager();
+          const { messages, compressed, level } = await contextManager.compress(ctx.messages);
+          if (compressed) {
+            ctx.messages = messages;
+            ctx.save(SESSION_FILE);
+            logger.info(`Context compressed (level ${level})~`);
+          } else {
+            logger.info("Context is fine, no compression needed~");
+          }
           continue;
         }
         if (input.trim().startsWith("/goal ")) {
@@ -274,7 +372,7 @@ program
             console.log("\x1b[31m✗ Missing goal spec: /goal <spec>\x1b[0m\n");
             continue;
           }
-          
+
           const goalRunner = new GoalRunner(agent, ctx);
           const result = await goalRunner.run(goal);
           ctx.save(SESSION_FILE);
@@ -284,12 +382,12 @@ program
         if (input.trim().startsWith("/context")) {
           const contextManager = agent.getContextManager();
           const parts = input.trim().split(/\s+/);
-          
+
           // /context set <size> (quick set without menu)
           if (parts[1] === "set" && parts[2]) {
             const sizeStr = parts[2].toLowerCase();
             let maxTokens: number;
-            
+
             if (sizeStr.endsWith("k")) {
               maxTokens = parseFloat(sizeStr) * 1000;
             } else if (sizeStr.endsWith("m")) {
@@ -297,7 +395,7 @@ program
             } else {
               maxTokens = parseInt(sizeStr);
             }
-            
+
             if (isNaN(maxTokens) || maxTokens <= 0) {
               console.log("\x1b[31m✗ Invalid size. Use: /context set 128k\x1b[0m\n");
             } else {
@@ -306,7 +404,7 @@ program
             }
             continue;
           }
-          
+
           // /context (交互式菜单)
           await interactiveContext(contextManager, ctx);
           continue;
@@ -314,7 +412,7 @@ program
 
         await agent.run(ctx, input);
         ctx.save(SESSION_FILE);
-        
+
         // Show token usage
         const { main, subagent, grand } = agent.getGrandTotalTokens();
         if (grand.requestCount > 0) {
@@ -329,6 +427,12 @@ program
           }
         }
       }
+
+      // Clean exit: restore terminal state
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      rl.close();
     } catch (err) {
       console.error("\x1b[31m✗ " + (err as Error).message + "\x1b[0m");
       process.exit(1);
